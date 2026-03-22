@@ -35,7 +35,10 @@ export const resolveTenantFromUrl = (): string | null => {
     'firebaseapp.com',
     'netlify.app',
     'github.io',
-    'app.com' // Added app.com as a base domain for subdomains
+    'app.com',
+    'vercel.app'
+    
+    // Added app.com as a base domain for subdomains
   ];
 
   // Check if it's a known system domain without a subdomain
