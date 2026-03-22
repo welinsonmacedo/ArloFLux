@@ -1,0 +1,5 @@
+{
+  "name": "ArloFlux",
+  "description": "ERP completo para restaurantes e comércios em geral",
+  "requestFramePermissions": ["camera"]
+}

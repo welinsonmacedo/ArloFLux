@@ -1,0 +1,69 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#22c55e" />
+    
+    <!-- SECURITY HEADERS -->
+    <!-- Content Security Policy: Restringe fontes de script, estilos e conexões -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self'; 
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; 
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+        font-src 'self' https://fonts.gstatic.com; 
+        img-src 'self' data: https: blob:; 
+        connect-src 'self' https://*.supabase.co https://api.qrserver.com https://viacep.com.br https://esm.sh https://api.ipify.org https://api.seeip.org https://api.db-ip.com ws: wss:;
+        frame-src 'self' https://esm.sh;
+        object-src 'none';
+        base-uri 'self';
+    ">
+    
+    <!-- Configurações para iOS (Ocultar barra de endereços/links) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ArloFlux" />
+    
+    <title>ArloFlux</title>
+    
+    <script>
+      (function() {
+        var link = document.createElement('link');
+        link.rel = 'manifest';
+        if (window.location.pathname.startsWith('/client')) {
+          link.href = '/manifest-client.json?v=2';
+        } else {
+          link.href = '/manifest.json?v=2';
+        }
+        document.head.appendChild(link);
+      })();
+    </script>
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1996/1996068.png">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.95.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-50 text-slate-900">
+    <!-- Região de arraste invisível para Desktop PWA -->
+    <div class="app-drag-region"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

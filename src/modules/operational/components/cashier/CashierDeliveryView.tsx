@@ -1,0 +1,469 @@
+
+import React, { useState, useEffect } from 'react';
+import { useRestaurant } from '@/core/context/RestaurantContext';
+import { useInventory } from '@/core/context/InventoryContext';
+import { useOrder } from '@/core/context/OrderContext';
+import { useUI } from '@/core/context/UIContext';
+import { DeliveryInfo, DeliveryMethodConfig, InventoryItem, OrderStatus } from '@/types';
+import { Button } from '@/modules/common/components/Button';
+import { Search, User, Trash2, Printer, CheckCircle, MapPin, Loader2, Clock, Bike } from 'lucide-react';
+import { AddToCartModal } from '@/modules/common/components/modals/AddToCartModal';
+import { DispatchModal } from '@/modules/common/components/modals/DispatchModal';
+import { PaymentConferenceModal } from '@/modules/common/components/modals/PaymentConferenceModal';
+import { printHtml, getReceiptStyles } from '@/core/print/printHelper';
+
+export const CashierDeliveryView: React.FC = () => {
+    const { state: restState } = useRestaurant();
+    const { state: invState } = useInventory();
+    const { state: orderState, dispatch: orderDispatch } = useOrder();
+    const { showAlert } = useUI();
+
+    const [cart, setCart] = useState<{ item: InventoryItem; quantity: number; notes: string; extras: InventoryItem[] }[]>([]);
+    const [form, setForm] = useState<DeliveryInfo>({ 
+        customerName: '', phone: '', address: '', platform: 'PHONE', methodId: '', deliveryFee: 0, changeFor: 0, paymentMethod: '', paymentStatus: 'PENDING' 
+    });
+    const [search, setSearch] = useState('');
+    const [processing, setProcessing] = useState(false);
+
+    // Modal de Item
+    const [itemModalOpen, setItemModalOpen] = useState(false);
+    const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+    // Modal de Despacho
+    const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
+    const [selectedOrderToDispatch, setSelectedOrderToDispatch] = useState<any>(null);
+
+    // Modal de Conferência
+    const [conferenceModalOpen, setConferenceModalOpen] = useState(false);
+    const [selectedOrderToConference, setSelectedOrderToConference] = useState<any>(null);
+
+    const activeDeliveryOrders = orderState.orders.filter(o => o.type === 'DELIVERY' && !o.isPaid && o.status !== 'CANCELLED' && o.status !== 'DISPATCHED');
+    const dispatchedOrders = orderState.orders.filter(o => o.type === 'DELIVERY' && o.status === 'DISPATCHED' && !o.isPaid);
+    
+    const deliveryMethods = restState.businessInfo?.deliverySettings?.filter(m => m.isActive) || [];
+    const configuredPaymentMethods = restState.businessInfo?.paymentMethods?.filter(pm => pm.isActive) || [];
+
+    useEffect(() => {
+        if (configuredPaymentMethods.length > 0 && !form.paymentMethod) {
+            setForm(prev => ({ ...prev, paymentMethod: configuredPaymentMethods[0].name }));
+        }
+    }, [configuredPaymentMethods]);
+
+    const selectDeliveryMethod = (method: DeliveryMethodConfig) => {
+        let fee = 0;
+        if (method.feeBehavior === 'ADD_TO_TOTAL' && method.feeType === 'FIXED') {
+            fee = method.feeValue;
+        }
+        setForm(prev => ({ ...prev, methodId: method.id, platform: method.name, deliveryFee: fee }));
+    };
+
+    const isCash = () => {
+        const method = configuredPaymentMethods.find(pm => pm.name === form.paymentMethod);
+        return method?.type === 'CASH';
+    };
+
+    const calculateTotal = () => {
+        const subtotal = cart.reduce((acc, i) => acc + ((i.item.salePrice + i.extras.reduce((s,e)=>s+e.salePrice,0)) * i.quantity), 0);
+        return subtotal + (form.deliveryFee || 0);
+    };
+
+    const handleAddToCart = (data: { quantity: number; notes: string; extras: InventoryItem[] }, explicitItem?: InventoryItem) => {
+        const itemToAdd = explicitItem || selectedItem;
+        if (itemToAdd) {
+            setCart([...cart, { item: itemToAdd, ...data }]);
+        }
+    };
+
+    const handleSubmit = async () => {
+        if (cart.length === 0) return showAlert({ title: "Carrinho Vazio", message: "Adicione itens.", type: 'WARNING' });
+        if (!form.customerName) return showAlert({ title: "Dados Incompletos", message: "Informe o cliente.", type: 'WARNING' });
+        if (!form.methodId) return showAlert({ title: "Método de Entrega", message: "Selecione como será a entrega.", type: 'WARNING' });
+
+        setProcessing(true);
+        try {
+            const itemsPayload = cart.map(cartItem => {
+                return [
+                    { 
+                        inventoryItemId: cartItem.item.id, 
+                        quantity: cartItem.quantity, 
+                        notes: cartItem.notes, 
+                        salePrice: cartItem.item.salePrice,
+                        name: cartItem.item.name,
+                        type: cartItem.item.type === 'RESALE' ? 'BAR' : 'KITCHEN'
+                    },
+                    ...cartItem.extras.map(ex => ({
+                        inventoryItemId: ex.id,
+                        quantity: cartItem.quantity,
+                        notes: `[ADICIONAL] p/ ${cartItem.item.name}`,
+                        salePrice: ex.salePrice,
+                        name: ex.name,
+                        type: ex.type === 'RESALE' ? 'BAR' : 'KITCHEN'
+                    }))
+                ];
+            }).flat();
+
+            await orderDispatch({ 
+                type: 'PLACE_ORDER', 
+                orderType: 'DELIVERY', 
+                items: itemsPayload, 
+                deliveryInfo: form 
+            });
+
+            setCart([]);
+            setForm({ 
+                customerName: '', phone: '', address: '', platform: 'PHONE', methodId: '', 
+                deliveryFee: 0, changeFor: 0, 
+                paymentMethod: configuredPaymentMethods[0]?.name || '', 
+                paymentStatus: 'PENDING' 
+            });
+            showAlert({ title: "Sucesso", message: "Pedido enviado!", type: 'SUCCESS' });
+        } catch (error) {
+            showAlert({ title: "Erro", message: "Falha ao criar pedido.", type: 'ERROR' });
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleDispatch = (orderId: string) => {
+        const order = activeDeliveryOrders.find(o => o.id === orderId);
+        if (!order) return;
+        setSelectedOrderToDispatch(order);
+        setDispatchModalOpen(true);
+    };
+
+    const confirmDispatch = async (courierInfo: { id: string, name: string }) => {
+        if (!selectedOrderToDispatch) return;
+        const order = selectedOrderToDispatch;
+        const total = order.items.reduce((acc: number, i: any) => acc + (i.productPrice * i.quantity), 0) + (order.deliveryInfo?.deliveryFee || 0);
+
+        // Check if payment method is APP/ONLINE
+        const paymentMethodConfig = configuredPaymentMethods.find(pm => pm.name === order.deliveryInfo?.paymentMethod);
+        const isAppPayment = paymentMethodConfig?.type === 'APP';
+
+        if (isAppPayment) {
+             // Auto-finalize
+             await orderDispatch({ 
+                type: 'PROCESS_PAYMENT', 
+                amount: total, 
+                method: order.deliveryInfo?.paymentMethod || 'APP', 
+                orderId: order.id,
+                cashierName: 'Delivery',
+                courierInfo
+            });
+            showAlert({ title: "Finalizado", message: `Pedido App finalizado automaticamente!`, type: 'SUCCESS' });
+        } else {
+            // Mark as Dispatched
+            await orderDispatch({
+                type: 'DISPATCH_ORDER',
+                orderId: order.id,
+                courierInfo
+            });
+            showAlert({ title: "Despachado", message: `Pedido despachado por ${courierInfo.name}. Aguardando retorno.`, type: 'INFO' });
+        }
+        
+        setDispatchModalOpen(false);
+        setSelectedOrderToDispatch(null);
+    };
+
+    const handleConference = (orderId: string) => {
+        const order = dispatchedOrders.find(o => o.id === orderId);
+        if (!order) return;
+        setSelectedOrderToConference(order);
+        setConferenceModalOpen(true);
+    };
+
+    const confirmConference = async (amount: number, method: string) => {
+        if (!selectedOrderToConference) return;
+        
+        await orderDispatch({ 
+            type: 'PROCESS_PAYMENT', 
+            amount: amount, 
+            method: method, 
+            orderId: selectedOrderToConference.id,
+            cashierName: 'Delivery'
+        });
+        
+        showAlert({ title: "Conferido", message: "Pagamento confirmado e pedido finalizado.", type: 'SUCCESS' });
+        setConferenceModalOpen(false);
+        setSelectedOrderToConference(null);
+    };
+
+    const handlePrint = () => {
+        const subtotal = cart.reduce((acc, i) => acc + ((i.item.salePrice + i.extras.reduce((s,e)=>s+e.salePrice,0)) * i.quantity), 0);
+        const total = subtotal + (form.deliveryFee || 0);
+        
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Cupom Delivery</title>
+                ${getReceiptStyles()}
+            </head>
+            <body>
+                <div class="header">
+                    <span class="title">${restState.theme.restaurantName}</span>
+                    <span class="subtitle">DELIVERY / BALCÃO</span>
+                </div>
+                <div style="margin-bottom: 15px; font-size: 13px;">
+                    <strong>Cliente:</strong> ${form.customerName}<br/>
+                    <strong>Telefone:</strong> ${form.phone || '-'}<br/>
+                    <strong>Endereço:</strong> ${form.address || 'Retirada'}<br/>
+                    <strong>Método:</strong> ${form.platform} (${form.paymentMethod})
+                </div>
+                <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+                ${cart.map(i => `
+                    <div class="item-row">
+                        <span>${i.quantity}x ${i.item.name}</span>
+                        <span>${(i.item.salePrice * i.quantity).toFixed(2)}</span>
+                    </div>
+                    ${i.extras.map(e => `<div class="extras">+ ${e.name} (${e.salePrice.toFixed(2)})</div>`).join('')}
+                    ${i.notes ? `<div class="note">${i.notes}</div>` : ''}
+                `).join('')}
+                <div class="total">
+                    <div style="font-size: 12px; font-weight: normal;">Subtotal: ${subtotal.toFixed(2)}</div>
+                    <div style="font-size: 12px; font-weight: normal;">Taxa: ${form.deliveryFee.toFixed(2)}</div>
+                    <div style="margin-top: 5px;">TOTAL: R$ ${total.toFixed(2)}</div>
+                    ${isCash() && form.changeFor ? `<div style="font-size: 12px;">Troco para: ${form.changeFor.toFixed(2)}</div>` : ''}
+                </div>
+                <div class="footer">
+                    ${new Date().toLocaleString()}
+                </div>
+            </body>
+            </html>
+        `;
+        printHtml(html);
+    };
+
+    const handlePrintOrder = (order: any) => {
+        const total = order.items.reduce((acc: number, i: any) => acc + (i.productPrice * i.quantity), 0) + (order.deliveryInfo?.deliveryFee || 0);
+        
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Cupom Delivery</title>
+                ${getReceiptStyles()}
+            </head>
+            <body>
+                <div class="header">
+                    <span class="title">${restState.theme.restaurantName}</span>
+                    <span class="subtitle">DELIVERY / BALCÃO</span>
+                    <span class="subtitle">Pedido #${order.id.slice(0,4)}</span>
+                </div>
+                <div style="margin-bottom: 15px; font-size: 13px;">
+                    <strong>Cliente:</strong> ${order.deliveryInfo?.customerName}<br/>
+                    <strong>Telefone:</strong> ${order.deliveryInfo?.phone || '-'}<br/>
+                    <strong>Endereço:</strong> ${order.deliveryInfo?.address || 'Retirada'}<br/>
+                    <strong>Método:</strong> ${order.deliveryInfo?.platform} (${order.deliveryInfo?.paymentMethod})
+                </div>
+                <div style="border-bottom: 1px dashed #000; margin-bottom: 10px;"></div>
+                ${order.items.map((i: any) => `
+                    <div class="item-row">
+                        <span>${i.quantity}x ${i.productName}</span>
+                        <span>${(i.productPrice * i.quantity).toFixed(2)}</span>
+                    </div>
+                    ${i.notes ? `<div class="note">${i.notes}</div>` : ''}
+                `).join('')}
+                <div class="total">
+                    <div style="font-size: 12px; font-weight: normal;">Taxa: ${(order.deliveryInfo?.deliveryFee || 0).toFixed(2)}</div>
+                    <div style="margin-top: 5px;">TOTAL: R$ ${total.toFixed(2)}</div>
+                    ${order.deliveryInfo?.changeFor ? `<div style="font-size: 12px;">Troco para: ${order.deliveryInfo.changeFor.toFixed(2)}</div>` : ''}
+                </div>
+                <div class="footer">
+                    ${new Date(order.timestamp).toLocaleString()}
+                </div>
+            </body>
+            </html>
+        `;
+        printHtml(html);
+    };
+
+    return (
+        <div className="flex flex-col xl:flex-row gap-4 h-full overflow-hidden">
+            {/* Coluna 1: Catálogo */}
+            <div className="xl:w-[25%] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full">
+                <div className="p-4 border-b bg-gray-50/50">
+                    <div className="relative group">
+                        <Search className="absolute left-4 top-3 text-gray-400" size={18}/>
+                        <input className="w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-sm focus:border-blue-500 outline-none" placeholder="Buscar produto..." value={search} onChange={e => setSearch(e.target.value)} />
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-3 content-start custom-scrollbar">
+                    {invState.inventory.filter(i => !i.isExtra && i.type !== 'INGREDIENT' && i.name.toLowerCase().includes(search.toLowerCase())).map(item => (
+                        <button key={item.id} onClick={() => { 
+                            if (item.type === 'COMPOSITE') {
+                                setSelectedItem(item); 
+                                setItemModalOpen(true); 
+                            } else {
+                                handleAddToCart({ quantity: 1, notes: '', extras: [] }, item);
+                            }
+                        }} className="bg-gray-50 p-3 rounded-xl border border-transparent hover:border-blue-300 hover:shadow-md transition-all text-left flex flex-col justify-between h-24">
+                            <div className="font-bold text-slate-800 text-xs line-clamp-2">{item.name}</div>
+                            <div className="text-blue-600 font-black text-sm mt-1">R$ {item.salePrice.toFixed(2)}</div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Coluna 2: Formulário e Carrinho */}
+            <div className="xl:w-[35%] flex flex-col gap-4 h-full overflow-hidden">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 shrink-0">
+                    <h3 className="font-black text-slate-700 uppercase tracking-tight mb-3 flex items-center gap-2 text-xs"><User size={14}/> Cliente</h3>
+                    <div className="space-y-2">
+                        <div className="flex gap-2">
+                            <input className="flex-1 border p-2 rounded-lg bg-gray-50 text-xs font-bold" placeholder="Nome" value={form.customerName} onChange={e => setForm({...form, customerName: e.target.value})} />
+                            <input className="w-1/3 border p-2 rounded-lg bg-gray-50 text-xs font-bold" placeholder="Telefone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+                        </div>
+                        <input className="w-full border p-2 rounded-lg bg-gray-50 text-xs font-bold" placeholder="Endereço Completo" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                            {deliveryMethods.map(m => (
+                                <button key={m.id} onClick={() => selectDeliveryMethod(m)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black border uppercase whitespace-nowrap transition-all ${form.methodId === m.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-200'}`}>{m.name}</button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+                    <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
+                        <span className="text-xs font-black text-gray-500 uppercase tracking-widest">Itens ({cart.length})</span>
+                        <button onClick={() => setCart([])} className="text-[10px] text-red-500 font-bold uppercase hover:underline">Limpar</button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                        {cart.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-gray-50 border border-transparent hover:border-gray-200 group">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-bold text-slate-800 truncate">{item.quantity}x {item.item.name}</div>
+                                    {item.extras.length > 0 && <div className="text-[9px] text-orange-600 truncate">+ {item.extras.map(e => e.name).join(', ')}</div>}
+                                    {item.notes && <div className="text-[9px] text-gray-400 italic truncate">"{item.notes}"</div>}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-blue-600">R$ {((item.item.salePrice + item.extras.reduce((s,e)=>s+e.salePrice,0)) * item.quantity).toFixed(2)}</span>
+                                    <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                                </div>
+                            </div>
+                        ))}
+                        {cart.length === 0 && <div className="text-center py-10 text-gray-300 text-xs uppercase font-bold">Carrinho Vazio</div>}
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 shrink-0 space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-1"><label className="text-[9px] font-bold text-gray-400 uppercase">Taxa</label><input type="number" className="w-full border p-1.5 rounded-lg text-xs" value={form.deliveryFee} onChange={e => setForm({...form, deliveryFee: parseFloat(e.target.value)})} /></div>
+                        <div className="col-span-1">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase">Pagamento</label>
+                            <select className="w-full border p-1.5 rounded-lg text-xs bg-white" value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})}>
+                                <option value="">Selecione...</option>
+                                {configuredPaymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>)}
+                                {configuredPaymentMethods.length === 0 && <><option value="CASH">Dinheiro</option><option value="CARD_MACHINE">Maquininha</option></>}
+                            </select>
+                        </div>
+                        {isCash() && <div className="col-span-1"><label className="text-[9px] font-bold text-gray-400 uppercase">Troco</label><input type="number" className="w-full border p-1.5 rounded-lg text-xs" placeholder="0.00" value={form.changeFor || ''} onChange={e => setForm({...form, changeFor: parseFloat(e.target.value)})} /></div>}
+                    </div>
+                    
+                    <div className="pt-2 border-t flex items-center justify-between">
+                        <span className="text-2xl font-black text-slate-800">R$ {calculateTotal().toFixed(2)}</span>
+                        <div className="flex gap-2">
+                            <Button variant="secondary" onClick={handlePrint} disabled={cart.length === 0} className="w-10 h-10 p-0 flex items-center justify-center rounded-xl bg-gray-100" title="Imprimir"><Printer size={18}/></Button>
+                            <Button onClick={handleSubmit} disabled={processing} className="h-10 px-6 rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-lg text-xs font-black uppercase tracking-wide">
+                                {processing ? <Loader2 className="animate-spin"/> : 'ENVIAR'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Coluna 3: Monitor (Dividido em Preparo e Despachados) */}
+            <div className="xl:w-[40%] flex flex-col gap-4 h-full overflow-hidden">
+                {/* Preparo */}
+                <div className="flex-1 bg-slate-100 p-4 rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
+                    <h3 className="font-black text-slate-700 uppercase tracking-tight mb-3 ml-1 text-xs flex items-center gap-2"><Clock size={14}/> Em Preparo ({activeDeliveryOrders.length})</h3>
+                    <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                        {activeDeliveryOrders.map(order => {
+                            const total = order.items.reduce((acc, i) => acc + (i.productPrice * i.quantity), 0);
+                            const kitchenItems = order.items.filter(i => i.productType === 'KITCHEN');
+                            const isReady = kitchenItems.length === 0 || kitchenItems.every(i => i.status === OrderStatus.READY);
+
+                            return (
+                                <div key={order.id} className={`bg-white p-3 rounded-xl shadow-sm border-l-4 transition-all ${isReady ? 'border-l-emerald-500' : 'border-l-orange-400'}`}>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-slate-800 text-sm truncate">{order.deliveryInfo?.customerName}</h4>
+                                            <div className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-1 mt-0.5">
+                                                <span className="bg-gray-100 px-1.5 py-0.5 rounded">{order.deliveryInfo?.platform}</span>
+                                                <span>#{order.id.slice(0,4)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-black text-slate-800 text-sm">R$ {total.toFixed(2)}</div>
+                                            <button onClick={() => handlePrintOrder(order)} className="text-gray-400 hover:text-blue-600 mt-1" title="Imprimir Cupom"><Printer size={14}/></button>
+                                        </div>
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 mb-2 truncate flex items-center gap-1"><MapPin size={10}/> {order.deliveryInfo?.address || 'Retirada'}</div>
+                                    {isReady ? (
+                                        <button onClick={() => handleDispatch(order.id)} className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] uppercase shadow-sm flex items-center justify-center gap-1"><CheckCircle size={12}/> Despachar</button>
+                                    ) : (
+                                        <div className="w-full py-1.5 bg-orange-100 text-orange-700 rounded-lg font-bold text-[10px] uppercase text-center border border-orange-200">Preparando</div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        {activeDeliveryOrders.length === 0 && <div className="text-center py-10 text-gray-400 text-xs font-bold uppercase">Sem pedidos ativos</div>}
+                    </div>
+                </div>
+
+                {/* Despachados */}
+                <div className="flex-1 bg-blue-50 p-4 rounded-2xl border border-blue-100 overflow-hidden flex flex-col">
+                    <h3 className="font-black text-blue-800 uppercase tracking-tight mb-3 ml-1 text-xs flex items-center gap-2"><Bike size={14}/> Despachados / Conferência ({dispatchedOrders.length})</h3>
+                    <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                        {dispatchedOrders.map(order => {
+                            const total = order.items.reduce((acc, i) => acc + (i.productPrice * i.quantity), 0);
+                            return (
+                                <div key={order.id} className="bg-white p-3 rounded-xl shadow-sm border-l-4 border-l-blue-500">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-slate-800 text-sm truncate">{order.deliveryInfo?.customerName}</h4>
+                                            <div className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-1 mt-0.5">
+                                                <span className="bg-gray-100 px-1.5 py-0.5 rounded">{order.deliveryInfo?.platform}</span>
+                                                <span>#{order.id.slice(0,4)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-black text-slate-800 text-sm">R$ {total.toFixed(2)}</div>
+                                            <div className="text-[10px] text-gray-400 mt-1">{order.deliveryInfo?.courierName}</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 mb-2 truncate flex items-center gap-1"><MapPin size={10}/> {order.deliveryInfo?.address || 'Retirada'}</div>
+                                    <button onClick={() => handleConference(order.id)} className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-[10px] uppercase shadow-sm flex items-center justify-center gap-1">
+                                        <CheckCircle size={12}/> Conferir Entrega
+                                    </button>
+                                </div>
+                            );
+                        })}
+                        {dispatchedOrders.length === 0 && <div className="text-center py-10 text-blue-300 text-xs font-bold uppercase">Nenhum pedido despachado</div>}
+                    </div>
+                </div>
+            </div>
+
+            <AddToCartModal 
+                isOpen={itemModalOpen} 
+                onClose={() => setItemModalOpen(false)} 
+                item={selectedItem} 
+                onConfirm={handleAddToCart} 
+            />
+
+            <DispatchModal 
+                isOpen={dispatchModalOpen}
+                onClose={() => setDispatchModalOpen(false)}
+                order={selectedOrderToDispatch}
+                onConfirm={confirmDispatch}
+            />
+
+            <PaymentConferenceModal
+                isOpen={conferenceModalOpen}
+                onClose={() => setConferenceModalOpen(false)}
+                order={selectedOrderToConference}
+                onConfirm={confirmConference}
+            />
+        </div>
+    );
+};

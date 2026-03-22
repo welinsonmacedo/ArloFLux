@@ -1,0 +1,319 @@
+
+import React, { PropsWithChildren, useEffect, useState } from 'react';
+import socket from '@/core/socket';
+// @ts-ignore
+import { Routes, Route, Navigate, Link, useLocation, Outlet, useParams } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
+import { AuthProvider, useAuth } from '@/core/context/AuthProvider'; 
+import { RestaurantProvider, useRestaurant } from '@/core/context/RestaurantContext';
+import { InventoryProvider } from '@/core/context/InventoryContext'; 
+import { FinanceProvider } from '@/core/context/FinanceContext'; 
+import { MenuProvider } from '@/core/context/MenuContext'; 
+import { OrderProvider } from '@/core/context/OrderContext'; 
+import { StaffProvider } from '@/core/context/StaffContext'; 
+import { SaaSProvider, useSaaS } from '@/core/context/SaaSContext';
+import { UIProvider } from '@/core/context/UIContext';
+import { SecurityGuard } from '@/modules/common/components/SecurityGuard';
+import { isSupabaseConfigured } from '@/core/api/supabaseClient';
+import { GlobalLoading } from '@/modules/common/components/GlobalLoading';
+import { ClientApp } from '@/modules/client/pages/ClientApp';
+import { TableCodeGuard } from '@/modules/client/components/TableCodeGuard';
+import { AdminDashboard } from '@/modules/admin/pages/AdminDashboard';
+import { FinanceDashboard } from '@/modules/finance/pages/FinanceDashboard'; 
+import { SettingsDashboard } from '@/modules/admin/pages/SettingsDashboard';
+import { RestaurantDashboard } from '@/modules/admin/pages/RestaurantDashboard';
+import { CommerceDashboard } from '@/modules/operational/pages/CommerceDashboard'; 
+import { InventoryDashboard } from '@/modules/inventory/pages/InventoryDashboard';
+import { StaffDashboard } from '@/modules/staff/pages/StaffDashboard'; 
+import { AuditDashboard } from '@/modules/support/pages/AuditDashboard';
+import { SuperAdminDashboard } from '@/modules/superadmin/pages/SuperAdminDashboard';
+
+import { WaiterPanel } from '@/modules/operational/components/WaiterPanel';
+import { KitchenPanel } from '@/modules/operational/components/KitchenPanel';
+import { InventoryPanel } from '@/modules/inventory/components/inventory/InventoryPanel';
+import { FinancePanel } from '@/modules/finance/components/finance/FinancePanel';
+import { HRPanel } from '@/modules/staff/components/hr/HRPanel';
+import { CashierPanel } from '@/modules/operational/components/cashier/CashierPanel';
+import { Login } from '@/modules/auth/pages/Login';
+import { SaaSLogin } from '@/modules/auth/pages/SaaSLogin';
+import { RegisterRestaurant } from '@/modules/auth/pages/RegisterRestaurant';
+import { PrivacyPolicy } from '@/modules/common/pages/PrivacyPolicy';
+import { TermsOfService } from '@/modules/common/pages/TermsOfService';
+import { ManualPage } from '@/modules/support/pages/ManualPage';
+import { ModuleSelector } from '@/modules/auth/pages/ModuleSelector';
+import { TimeClock } from '@/modules/operational/pages/TimeClock'; // Nova Importação
+import { ClientLogin } from '@/modules/client/pages/ClientLogin';
+
+import { ClientHome } from '@/modules/client/pages/ClientHome';
+import { InstallPWA } from '@/modules/common/components/InstallPWA';
+import { PwaProvider } from '@/core/context/PwaContext';
+import { PwaGuard } from '@/modules/common/components/PwaGuard'; 
+import { CookieConsent } from '@/modules/common/components/CookieConsent'; 
+import { ConnectionStatus } from '@/modules/common/components/ConnectionStatus';
+import { Lock } from 'lucide-react';
+import { Role } from '@/types';
+import { getTenantSlug } from '@/core/tenant/tenantResolver';
+
+interface ProtectedRouteProps {
+    allowedRoles?: Role[];
+    requiredRoute?: string;
+    requiredFeature?: 'allowKds' | 'allowCashier' | 'allowReports' | 'allowInventory' | 'allowHR';
+}
+
+const ProtectedRestaurantRoute = ({ children, allowedRoles, requiredRoute, requiredFeature }: PropsWithChildren<ProtectedRouteProps>) => {
+    const { state: authState, checkPermission } = useAuth();
+    const { state: restState } = useRestaurant();
+    
+    if (authState.isLoading || restState.isLoading) return <GlobalLoading message="Verificando acessos..." />;
+
+    if (!authState.isAuthenticated || !authState.currentUser) {
+        return <Navigate to={`/login${window.location.search}`} replace />;
+    }
+
+    // Se a rota for /time-clock, não verifica modulo ativo
+    if (requiredRoute !== '/time-clock') {
+         if (!restState.activeModule && restState.allowedModules.length > 0) {
+             return <Navigate to="/modules" replace />;
+        }
+    }
+
+    if (requiredFeature && restState.planLimits) {
+        if (!restState.planLimits[requiredFeature]) {
+            return (
+                <div className="h-screen flex flex-col items-center justify-center p-10 text-center">
+                    <Lock size={48} className="text-orange-500 mb-4" />
+                    <h2 className="text-xl font-bold text-gray-800">Funcionalidade Indisponível</h2>
+                    <p className="text-gray-500 mt-2">Seu plano atual não inclui acesso a este módulo.</p>
+                </div>
+            );
+        }
+    }
+
+    if (allowedRoles && !checkPermission(allowedRoles)) {
+         return (
+            <div className="h-screen flex flex-col items-center justify-center p-10 text-center">
+                <Lock size={48} className="text-red-500 mb-4" />
+                <h2 className="text-xl font-bold text-gray-800">Acesso Negado</h2>
+                <p className="text-gray-500 mt-2">Você não tem permissão para acessar esta área.</p>
+            </div>
+         );
+    }
+    return <>{children}</>;
+};
+
+const ProtectedSaaSRoute = ({ children }: PropsWithChildren) => {
+    const { state } = useSaaS();
+    
+    if (state.isLoading) {
+        return <GlobalLoading message="Verificando sessão..." />;
+    }
+    
+    if (!state.isAuthenticated) {
+        return <Navigate to="/sys-admin" replace />;
+    }
+    return <>{children}</>;
+};
+
+const ClientRoute = () => {
+    const { state, authorize } = useRestaurant();
+    const { state: authState } = useAuth();
+    const slug = getTenantSlug();
+    const { tableId } = useParams();
+    
+    if (state.isLoading || authState.isLoading) return <GlobalLoading message="Carregando cardápio..." />;
+    
+    if (!authState.isAuthenticated) {
+        return <Navigate to={`/client/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`} replace />;
+    }
+
+    if (!state.isAuthorized || state.tableId !== tableId) {
+        return <TableCodeGuard slug={slug || ''} expectedTableId={tableId} onAuthorized={authorize} />;
+    }
+    
+    return <ClientApp />;
+};
+
+const TenantApp = () => {
+    const { state } = useRestaurant();
+    
+    if (state.isLoading) return <GlobalLoading message="Carregando sistema..." />;
+    
+    if (state.isInactiveTenant) {
+        return (
+            <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
+                <div className="bg-red-100 p-6 rounded-full mb-6 text-red-600 shadow-xl border border-red-200"><Lock size={64} /></div>
+                <h1 className="text-3xl font-bold text-gray-800 mb-2">Acesso Temporariamente Suspenso</h1>
+                <p className="text-gray-500">Entre em contato com o suporte para regularizar.</p>
+            </div>
+        );
+    }
+
+    const isLoginPage = window.location.pathname === '/login';
+
+    if (!state.isValidTenant && !isLoginPage) {
+        const slug = getTenantSlug();
+        const hostname = window.location.hostname;
+        const search = window.location.search;
+        const isConfigured = isSupabaseConfigured();
+        
+        return (
+            <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
+                <div className="bg-orange-100 p-6 rounded-full mb-6 text-orange-600 shadow-xl border border-orange-200">
+                    <AlertCircle size={64} />
+                </div>
+                <h1 className="text-3xl font-bold text-gray-800 mb-2">Restaurante não encontrado</h1>
+                <p className="text-gray-500 max-w-md">Não foi possível identificar o restaurante através deste link. Verifique se a URL está correta ou se o restaurante existe.</p>
+                
+                <div className="mt-6 p-6 bg-white rounded-2xl border border-gray-200 shadow-sm w-full max-w-md text-left space-y-4">
+                    <div className="flex justify-between items-center border-b pb-2 mb-2">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Diagnóstico do Sistema</p>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isConfigured ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {isConfigured ? 'Supabase OK' : 'Supabase Desconectado'}
+                        </span>
+                    </div>
+                    
+                    <div>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Slug Identificado</p>
+                        <p className="font-mono text-sm font-bold text-slate-700 bg-gray-50 p-2 rounded border">{slug || '(Nenhum)'}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Hostname</p>
+                        <p className="font-mono text-xs text-slate-500 truncate">{hostname}</p>
+                    </div>
+                    {search && (
+                        <div>
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Parâmetros da URL</p>
+                            <p className="font-mono text-xs text-slate-500 break-all bg-gray-50 p-2 rounded border">{search}</p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="mt-8 flex flex-col sm:flex-row gap-4 w-full max-w-md">
+                    <button onClick={() => window.location.reload()} className="flex-1 px-6 py-3 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 transition-colors shadow-lg">Tentar Novamente</button>
+                    <Link to="/login" className="flex-1 px-6 py-3 bg-white text-slate-800 border-2 border-gray-100 rounded-xl font-bold text-sm hover:bg-gray-50 transition-colors">Área do Proprietário</Link>
+                </div>
+                
+                <p className="mt-8 text-[10px] text-gray-400 uppercase font-bold tracking-widest">Dica: O link deve conter ?restaurant=seu-slug</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full flex flex-row bg-gray-50 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-col w-full">
+                <div className="flex-1 overflow-y-auto">
+                    <Routes>
+                        <Route path="/" element={<Navigate to={`/login${window.location.search}`} replace />} />
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/waiter" element={<WaiterPanel />} />
+                        <Route path="/kitchen" element={<KitchenPanel />} />
+                        <Route path="/inventory-realtime" element={<InventoryPanel />} />
+                        <Route path="/finance-realtime" element={<FinancePanel />} />
+                        <Route path="/hr-realtime" element={<HRPanel />} />
+                        <Route path="/cashier-realtime" element={<CashierPanel />} />
+                        <Route path="/manual" element={<ManualPage />} />
+                        
+                        <Route path="/client/table/:tableId" element={<ClientRoute />} />
+                        <Route path="/modules" element={<ModuleSelector />} />
+                        
+                        {/* Rota para Bater Ponto - Acessível a todos logados */}
+                        <Route path="/time-clock" element={<ProtectedRestaurantRoute requiredRoute="/time-clock" requiredFeature="allowHR"><TimeClock /></ProtectedRestaurantRoute>} />
+                        
+                        <Route path="/restaurant/*" element={<ProtectedRestaurantRoute requiredRoute="/restaurant"><RestaurantDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/commerce/*" element={<ProtectedRestaurantRoute requiredRoute="/commerce"><CommerceDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/inventory/*" element={<ProtectedRestaurantRoute requiredRoute="/inventory" requiredFeature="allowInventory"><InventoryDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/rh/*" element={<ProtectedRestaurantRoute requiredRoute="/rh" requiredFeature="allowHR"><StaffDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/audit/*" element={<ProtectedRestaurantRoute allowedRoles={[Role.ADMIN]} requiredRoute="/audit"><AuditDashboard /></ProtectedRestaurantRoute>} />
+
+                        <Route path="/admin/*" element={<ProtectedRestaurantRoute allowedRoles={[Role.ADMIN]} requiredRoute="/admin"><AdminDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/settings/*" element={<ProtectedRestaurantRoute allowedRoles={[Role.ADMIN]} requiredRoute="/settings"><SettingsDashboard /></ProtectedRestaurantRoute>} />
+                        <Route path="/finance/*" element={<ProtectedRestaurantRoute allowedRoles={[Role.ADMIN]} requiredRoute="/finance"><FinanceDashboard /></ProtectedRestaurantRoute>} />
+                        
+                        <Route path="*" element={<Navigate to={`/login${window.location.search}`} replace />} />
+                    </Routes>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const App: React.FC = () => {
+  const location = useLocation();
+  const [tenantSlug, setTenantSlug] = useState<string | null>(getTenantSlug());
+
+  useEffect(() => {
+    socket.on("connect", () => {
+      console.log("Connected to server", socket.id);
+    });
+    
+    socket.on("test-event", (data) => {
+      console.log("Received test event", data);
+    });
+
+    return () => {
+      socket.off("connect");
+      socket.off("test-event");
+    };
+  }, []);
+
+  useEffect(() => {
+      setTenantSlug(getTenantSlug());
+  }, [location]);
+
+  return (
+        <UIProvider>
+            <SecurityGuard>
+                <AuthProvider>
+                    <SaaSProvider>
+                        <PwaProvider>
+                            <RestaurantProvider>
+                                <PwaGuard>
+                                    <CookieConsent />
+                                    <InstallPWA />
+                                    <ConnectionStatus />
+                                    <Routes>
+                                        {/* Client Routes - Tenant Agnostic */}
+                                        <Route path="/client/login" element={<ClientLogin />} />
+                                        <Route path="/client/home" element={<ClientHome />} />
+                                        <Route path="/client/history" element={<Navigate to="/client/home" replace />} />
+
+                                        {/* Main Application Routes */}
+                                        <Route path="/*" element={
+                                            tenantSlug ? (
+                                                <MenuProvider>
+                                                    <OrderProvider>
+                                                        <StaffProvider>
+                                                            <InventoryProvider>
+                                                                <FinanceProvider>
+                                                                    <TenantApp />
+                                                                </FinanceProvider>
+                                                            </InventoryProvider>
+                                                        </StaffProvider>
+                                                    </OrderProvider>
+                                                </MenuProvider>
+                                            ) : (
+                                                <Routes>
+                                                    <Route path="/" element={<Navigate to="/login" replace />} />
+                                                    <Route path="/login" element={<Login />} />
+                                                    <Route path="/register" element={<RegisterRestaurant />} />
+                                                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                                                    <Route path="/terms" element={<TermsOfService />} />
+                                                    <Route path="/sys-admin" element={<SaaSLogin />} /> 
+                                                    <Route path="/dashboard" element={<ProtectedSaaSRoute><SuperAdminDashboard /></ProtectedSaaSRoute>} /> 
+                                                    <Route path="*" element={<Navigate to="/login" />} />
+                                                </Routes>
+                                            )
+                                        } />
+                                    </Routes>
+                                </PwaGuard>
+                            </RestaurantProvider>
+                        </PwaProvider>
+                    </SaaSProvider>
+                </AuthProvider>
+            </SecurityGuard>
+        </UIProvider>
+
+  );
+};
+
+export default App;
