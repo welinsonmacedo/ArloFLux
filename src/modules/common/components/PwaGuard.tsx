@@ -1,151 +1,102 @@
-import React, { useEffect, useState } from 'react';
-// @ts-ignore
-import { useLocation } from 'react-router-dom';
-import { Download, Smartphone, Share, PlusSquare, Monitor } from 'lucide-react';
-import { useSaaS } from '@/core/context/SaaSContext';
+import React, { useEffect, useState, useMemo } from "react";
+import { useLocation } from "react-router-dom";
+import { Smartphone } from "lucide-react";
+import { useSaaS } from "@/core/context/SaaSContext";
+
+type OS = "iOS" | "Android" | "Desktop";
 
 export const PwaGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { state: saasState } = useSaaS();
-  
-  // Initialize with real value to avoid flash
-  const [isPWA, setIsPwa] = useState(() => {
-      if (typeof window === 'undefined') return true;
-      return window.matchMedia('(display-mode: standalone)').matches || 
-      (window.navigator as any).standalone || 
-      document.referrer.includes('android-app://');
-  });
 
-  const [os, setOS] = useState<'iOS' | 'Android' | 'Desktop'>('Desktop');
+  const [os, setOS] = useState<OS>("Desktop");
+  const [isPWA, setIsPWA] = useState(false);
 
   useEffect(() => {
-    // Detecta se está rodando em modo Standalone (PWA)
-    const isStandalone = 
-      window.matchMedia('(display-mode: standalone)').matches || 
-      (window.navigator as any).standalone || 
-      document.referrer.includes('android-app://');
-
-    setIsPwa(isStandalone);
-
-    // Detecta Sistema Operacional para mostrar instruções corretas
     const userAgent = window.navigator.userAgent.toLowerCase();
+
     if (/iphone|ipad|ipod/.test(userAgent)) {
-      setOS('iOS');
+      setOS("iOS");
     } else if (/android/.test(userAgent)) {
-      setOS('Android');
+      setOS("Android");
     } else {
-      setOS('Desktop');
+      setOS("Desktop");
     }
+
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone ||
+      document.referrer.includes("android-app://");
+
+    setIsPWA(standalone);
   }, []);
 
-  // Rotas permitidas no navegador (Apenas Painel do CEO e rotas públicas essenciais)
-  const currentPath = (location.pathname || window.location.pathname || '').toLowerCase();
-  const isBypassRoute = 
-    currentPath === '/' || 
-    currentPath === '/login' ||
-    currentPath.startsWith('/privacy') || 
-    currentPath.startsWith('/terms') ||
-    currentPath.startsWith('/sys-admin') ||
-    currentPath.startsWith('/sysadmin') ||
-    currentPath.startsWith('/dashboard');
+  const currentPath = useMemo(
+    () => (location.pathname || "").toLowerCase(),
+    [location.pathname]
+  );
 
-  // Se for uma rota de bypass, renderiza imediatamente sem esperar o loading do SaaS
-  if (isBypassRoute) {
-    return <>{children}</>;
-  }
+  const isBypassRoute = useMemo(() => {
+    return (
+      currentPath === "/" ||
+      currentPath === "/login" ||
+      currentPath.startsWith("/privacy") ||
+      currentPath.startsWith("/terms") ||
+      currentPath.startsWith("/sys-admin") ||
+      currentPath.startsWith("/sysadmin") ||
+      currentPath.startsWith("/dashboard")
+    );
+  }, [currentPath]);
 
-  // Se já for PWA, renderiza o app normalmente
-  if (isPWA) {
-    return <>{children}</>;
-  }
+  if (isBypassRoute) return <>{children}</>;
 
-  // Se ainda estiver carregando as configurações globais, aguarda
-  if (saasState.isLoading) {
-    return null;
-  }
+  if (isPWA) return <>{children}</>;
 
-  // Se a configuração permitir uso sem PWA
+  if (saasState.isLoading) return null;
+
   const pwaRequired = saasState.globalSettings?.pwaRequired !== false;
-  
-  if (!pwaRequired) {
-      return <>{children}</>;
-  }
 
-  const isClientRoute = location.pathname.startsWith('/client');
+  if (!pwaRequired) return <>{children}</>;
 
-  // Tela de Bloqueio / Instalação
+  const isClientRoute = currentPath.startsWith("/client");
+
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
       
-      {/* Background Effects */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600 rounded-full blur-[120px] opacity-20 transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-green-600 rounded-full blur-[120px] opacity-20 transform -translate-x-1/2 translate-y-1/2 pointer-events-none"></div>
+      <div className="max-w-md space-y-6">
 
-      <div className="max-w-md w-full relative z-10 text-center animate-fade-in">
-        <div className="bg-white/10 p-6 rounded-3xl inline-block mb-8 shadow-2xl backdrop-blur-md border border-white/10">
-           <Download size={64} className="text-green-400 animate-bounce-slow" />
+        <div className="flex justify-center">
+          <Smartphone size={64} className="text-blue-500" />
         </div>
-        
-        <h1 className="text-3xl font-black mb-4 tracking-tight">Instale o App</h1>
-        <p className="text-slate-300 text-lg mb-8 leading-relaxed">
-          {isClientRoute 
-            ? <>Para <strong>fazer pedidos</strong> e acompanhar seu <strong>histórico</strong>, é necessário instalar o aplicativo.</>
-            : <>Para acessar o painel de gestão, cozinha, caixa ou <strong>fazer pedidos</strong>, é necessário utilizar a versão instalada do <strong>ArloFlux</strong>.</>
-          }
+
+        <h1 className="text-2xl font-bold">
+          Instale o aplicativo
+        </h1>
+
+        <p className="text-slate-400 text-sm">
+          Para continuar utilizando o sistema, instale o aplicativo na tela inicial do seu dispositivo.
         </p>
 
-        <div className="bg-white text-slate-800 rounded-2xl p-6 text-left shadow-lg">
-          <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-            {os === 'iOS' ? <Smartphone size={20}/> : os === 'Android' ? <Smartphone size={20}/> : <Monitor size={20}/>}
-            Como Instalar no {os}
-          </h3>
+        {os === "iOS" && (
+          <p className="text-sm text-slate-300">
+            No Safari toque em <b>Compartilhar</b> e depois <b>Adicionar à Tela de Início</b>.
+          </p>
+        )}
 
-          <div className="space-y-4">
-            {os === 'iOS' && (
-              <>
-                <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-blue-600"><Share size={24}/></div>
-                  <p className="text-sm font-medium">1. Toque no botão <strong>Compartilhar</strong> na barra do navegador.</p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-slate-800"><PlusSquare size={24}/></div>
-                  <p className="text-sm font-medium">2. Selecione <strong>Adicionar à Tela de Início</strong>.</p>
-                </div>
-              </>
-            )}
+        {os === "Android" && (
+          <p className="text-sm text-slate-300">
+            No navegador toque no menu e selecione <b>Instalar aplicativo</b>.
+          </p>
+        )}
 
-            {os === 'Android' && (
-              <>
-                <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-slate-800">⋮</div>
-                  <p className="text-sm font-medium">1. Toque no menu (três pontos) do Chrome.</p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-green-600"><Smartphone size={24}/></div>
-                  <p className="text-sm font-medium">2. Toque em <strong>Instalar aplicativo</strong> ou <strong>Adicionar à tela inicial</strong>.</p>
-                </div>
-              </>
-            )}
+        {os === "Desktop" && (
+          <p className="text-sm text-slate-300">
+            Use o botão de instalar na barra de endereço do navegador.
+          </p>
+        )}
 
-            {os === 'Desktop' && (
-              <>
-                 <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-slate-800"><Download size={24}/></div>
-                  <p className="text-sm font-medium">1. Localize o ícone de instalação na barra de endereço (canto direito).</p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="bg-slate-100 p-2 rounded-lg text-blue-600"><Monitor size={24}/></div>
-                  <p className="text-sm font-medium">2. Clique em <strong>Instalar ArloFlux</strong>.</p>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-8 opacity-50 text-xs text-center">
-          <p>Para uma melhor experiência, instale o aplicativo.</p>
-        </div>
       </div>
+
     </div>
   );
 };

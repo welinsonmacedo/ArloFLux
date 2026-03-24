@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo
+} from 'react';
 
 interface PwaContextType {
   deferredPrompt: any;
@@ -15,25 +22,42 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const handler = (e: any) => {
       e.preventDefault();
+
       setDeferredPrompt(e);
       setIsInstallable(true);
     };
+
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+    };
   }, []);
 
-  const install = async () => {
+  const install = useCallback(async () => {
     if (!deferredPrompt) return;
+
     deferredPrompt.prompt();
+
     const { outcome } = await deferredPrompt.userChoice;
+
     if (outcome === 'accepted') {
       setDeferredPrompt(null);
       setIsInstallable(false);
     }
-  };
+  }, [deferredPrompt]);
+
+  const value = useMemo(
+    () => ({
+      deferredPrompt,
+      isInstallable,
+      install
+    }),
+    [deferredPrompt, isInstallable, install]
+  );
 
   return (
-    <PwaContext.Provider value={{ deferredPrompt, isInstallable, install }}>
+    <PwaContext.Provider value={value}>
       {children}
     </PwaContext.Provider>
   );
@@ -41,8 +65,10 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const usePwa = () => {
   const context = useContext(PwaContext);
+
   if (!context) {
     throw new Error('usePwa must be used within a PwaProvider');
   }
+
   return context;
 };

@@ -26,19 +26,25 @@ export const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (authState.currentUser) {
-        if (authState.currentUser.role === Role.CLIENT) {
-            navigate('/client/home');
-        } else if (authState.currentUser.role === Role.SUPER_ADMIN) {
-            navigate('/dashboard');
-        } else if (authState.currentUser.role === Role.ADMIN) {
-            navigate('/admin');
-        } else {
-            // Redireciona para o seletor de módulos ao logar
-            navigate('/modules');
-        }
-    }
-  }, [authState.currentUser, navigate]);
+  if (!authState.currentUser) return;
+
+  let target = "/modules";
+
+  if (authState.currentUser.role === Role.CLIENT) {
+    target = "/client/home";
+  } 
+  else if (authState.currentUser.role === Role.SUPER_ADMIN) {
+    target = "/dashboard";
+  } 
+  else if (authState.currentUser.role === Role.ADMIN) {
+    target = "/admin";
+  }
+
+  if (location.pathname !== target) {
+    navigate(target, { replace: true });
+  }
+
+}, [authState.currentUser, location.pathname, navigate]);
 
   useEffect(() => {
       const params = new URLSearchParams(location.search);
