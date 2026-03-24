@@ -7,6 +7,7 @@ import { PwaProvider } from "@/core/context/PwaContext";
 import { UIProvider } from "@/core/context/UIContext";
 import { InventoryProvider } from "@/core/context/InventoryContext";
 import { FinanceProvider } from "@/core/context/FinanceContext";
+import { OrderProvider } from "@/core/context/OrderContext";
 
 export const AppProviders = ({ children }: PropsWithChildren) => {
   return (
@@ -17,7 +18,10 @@ export const AppProviders = ({ children }: PropsWithChildren) => {
             <RestaurantProvider>
                 <InventoryProvider>
                     <FinanceProvider>
-  {children}
+                        <OrderProvider>
+ {children}
+                        </OrderProvider>
+ 
                     </FinanceProvider>
                 </InventoryProvider>
             
