@@ -1,4 +1,3 @@
-
 import React from 'react';
 // @ts-ignore
 import { useNavigate } from 'react-router-dom';
@@ -6,187 +5,427 @@ import { useRestaurant } from '@/core/context/RestaurantContext';
 import { useAuth } from '@/core/context/AuthProvider';
 import { SystemModule } from '@/types';
 import { PERMISSIONS_SCHEMA } from '@/constants';
-import { ChefHat, Coffee, Truck, ArrowRight, LogOut, Grid, Briefcase, Settings, DollarSign, Store, Package, Users, Clock, LifeBuoy, ShieldCheck } from 'lucide-react';
+import { 
+  ChefHat, Coffee, Truck, ArrowRight, LogOut, Grid, Briefcase, 
+  Settings, DollarSign, Store, Package, Users, Clock, LifeBuoy, 
+  ShieldCheck, Sparkles, Star, Zap 
+} from 'lucide-react';
 import { Button } from '@/modules/common/components/Button';
 
+interface ModuleCardProps {
+  type: SystemModule | 'TIME_CLOCK' | 'SUPPORT';
+  title: string;
+  desc: string;
+  icon: React.ElementType;
+  gradient: string;
+  bgGradient: string;
+  customIconUrl?: string;
+  onClick: () => void;
+  isNew?: boolean;
+  isPopular?: boolean;
+}
+
 const ModuleCard = ({ 
-    title, 
-    desc, 
-    icon: Icon, 
-    colorClass, 
-    customIconUrl,
-    onClick 
-}: { 
-    type: SystemModule | 'TIME_CLOCK' | 'SUPPORT', 
-    title: string, 
-    desc: string, 
-    icon: React.ElementType, 
-    colorClass: string,
-    customIconUrl?: string,
-    onClick: () => void 
-}) => (
-    <div 
-        onClick={onClick}
-        className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:border-transparent group relative overflow-hidden h-full flex flex-col"
-    >
-        <div className={`absolute inset-0 opacity-0 group-hover:opacity-5 transition-opacity duration-500 ${colorClass.replace('text-', 'bg-')}`}></div>
+  title, 
+  desc, 
+  icon: Icon, 
+  gradient,
+  bgGradient,
+  customIconUrl,
+  onClick,
+  isNew,
+  isPopular
+}: ModuleCardProps) => (
+  <div 
+    onClick={onClick}
+    className={`
+      group relative rounded-2xl p-6 cursor-pointer 
+      transition-all duration-500 ease-out
+      bg-white/95 backdrop-blur-sm
+      border border-white/20
+      hover:scale-[1.02] hover:shadow-2xl
+      hover:border-white/40
+      overflow-hidden
+      h-full flex flex-col
+    `}
+  >
+    {/* Background Gradient Animation */}
+    <div className={`
+      absolute inset-0 opacity-0 group-hover:opacity-100 
+      transition-opacity duration-700 ease-out
+      ${bgGradient}
+    `} />
+    
+    {/* Glass Effect Overlay */}
+    <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-white/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+    
+    {/* Content */}
+    <div className="relative z-10">
+      {/* Icon Container */}
+      <div className={`
+        relative w-14 h-14 rounded-2xl flex items-center justify-center mb-5
+        transition-all duration-500 group-hover:scale-110 group-hover:rotate-3
+        ${gradient}
+        shadow-lg group-hover:shadow-xl
+      `}>
+        {customIconUrl ? (
+          <img src={customIconUrl} alt={title} className="w-7 h-7 object-contain brightness-0 invert" />
+        ) : (
+          <Icon size={28} className="text-white" strokeWidth={1.5} />
+        )}
         
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-md transition-transform group-hover:rotate-6 ${colorClass.replace('text-', 'bg-').replace('600', '100').replace('500', '100')} ${colorClass}`}>
-            {customIconUrl ? (
-                <img src={customIconUrl} alt={title} className="w-6 h-6 object-contain" />
-            ) : (
-                <Icon size={24} />
-            )}
-        </div>
-        
-        <h3 className="text-lg font-black text-slate-800 mb-2 group-hover:text-slate-900 leading-tight">{title}</h3>
-        <p className="text-slate-500 text-xs leading-relaxed mb-4 flex-1">{desc}</p>
-        
-        <div className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wider ${colorClass}`}>
-            Acessar <ArrowRight size={14} className="transition-transform group-hover:translate-x-1"/>
-        </div>
+        {/* Badges */}
+        {isNew && (
+          <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg animate-pulse">
+            NOVO
+          </div>
+        )}
+        {isPopular && !isNew && (
+          <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+            <Star size={12} className="inline mr-1" />
+            POPULAR
+          </div>
+        )}
+      </div>
+      
+      {/* Title */}
+      <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-slate-900 transition-colors">
+        {title}
+      </h3>
+      
+      {/* Description */}
+      <p className="text-slate-500 text-sm leading-relaxed mb-5 flex-1">
+        {desc}
+      </p>
+      
+      {/* CTA */}
+      <div className={`
+        flex items-center gap-2 font-semibold text-sm
+        transition-all duration-300
+        ${gradient.replace('bg-gradient-to-r', 'text-transparent bg-clip-text bg-gradient-to-r')}
+        group-hover:gap-3
+      `}>
+        <span>Acessar módulo</span>
+        <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
+      </div>
     </div>
+  </div>
 );
 
 export const ModuleSelector: React.FC = () => {
-    const { state, setActiveModule } = useRestaurant();
-    const { logout, state: authState } = useAuth();
-    const navigate = useNavigate();
+  const { state, setActiveModule } = useRestaurant();
+  const { logout, state: authState } = useAuth();
+  const navigate = useNavigate();
 
-    const allowed = state.allowedModules || ['RESTAURANT', 'MANAGER', 'CONFIG', 'FINANCE', 'COMMERCE', 'INVENTORY', 'HR', 'AUDIT'];
-    const tenantName = state.theme.restaurantName;
+  const allowed = state.allowedModules || ['RESTAURANT', 'MANAGER', 'CONFIG', 'FINANCE', 'COMMERCE', 'INVENTORY', 'HR', 'AUDIT'];
+  const tenantName = state.theme.restaurantName;
+  const userName = authState.currentUser?.name?.split(' ')[0] || 'Usuário';
 
-    const isModuleAllowed = (module: SystemModule) => {
-        // O tenant PRECISA ter o módulo liberado para qualquer um ver (incluindo ADMIN)
-        if (!allowed.includes(module)) return false;
+  const isModuleAllowed = (module: SystemModule) => {
+    if (!allowed.includes(module)) return false;
+    if (authState.currentUser?.role === 'ADMIN') return true;
+    if (!authState.currentUser?.allowedRoutes?.includes(module)) return false;
+    
+    if (authState.currentUser?.customRoleId) {
+      const schema = PERMISSIONS_SCHEMA as any;
+      const moduleFeatures = schema[module]?.features.map((f: any) => f.key) || [];
+      const userFeatures = authState.currentUser.allowedFeatures || [];
+      return moduleFeatures.some((mf: string) => userFeatures.includes(mf));
+    }
+    
+    return true;
+  };
 
-        // Se o tenant tem, checamos permissão do usuário
-        if (authState.currentUser?.role === 'ADMIN') return true;
-        if (!authState.currentUser?.allowedRoutes?.includes(module)) return false;
-
-        // Se o usuário tem cargo customizado, verifica se ele tem PELO MENOS UMA feature daquele módulo
-        if (authState.currentUser?.customRoleId) {
-            const schema = PERMISSIONS_SCHEMA as any;
-            const moduleFeatures = schema[module]?.features.map((f: any) => f.key) || [];
-            const userFeatures = authState.currentUser.allowedFeatures || [];
-            return moduleFeatures.some((mf: string) => userFeatures.includes(mf));
-        }
-
-        return true;
+  const handleSelect = (module: SystemModule) => {
+    setActiveModule(module);
+    
+    const routes: Record<SystemModule, string> = {
+      RESTAURANT: '/restaurant',
+      SNACKBAR: '/restaurant',
+      MANAGER: '/admin',
+      FINANCE: '/finance',
+      CONFIG: '/settings',
+      COMMERCE: '/commerce',
+      DISTRIBUTOR: '/commerce',
+      INVENTORY: '/inventory',
+      HR: '/rh',
+      AUDIT: '/audit'
     };
+    
+    navigate(routes[module] || '/');
+  };
 
-    const handleSelect = (module: SystemModule) => {
-        setActiveModule(module);
+  const handleTimeClock = () => navigate('/time-clock');
+  const handleSupport = () => navigate('/manual');
+
+  const bgUrl = state.theme.moduleSelectorBgUrl || state.globalSettings.moduleSelectorBgUrl;
+
+  // Gradient definitions for cards
+  const gradients = {
+    RESTAURANT: 'bg-gradient-to-r from-blue-500 to-blue-600',
+    SNACKBAR: 'bg-gradient-to-r from-orange-500 to-orange-600',
+    COMMERCE: 'bg-gradient-to-r from-indigo-500 to-indigo-600',
+    DISTRIBUTOR: 'bg-gradient-to-r from-cyan-500 to-cyan-600',
+    MANAGER: 'bg-gradient-to-r from-purple-500 to-purple-600',
+    INVENTORY: 'bg-gradient-to-r from-orange-500 to-red-500',
+    HR: 'bg-gradient-to-r from-pink-500 to-rose-500',
+    FINANCE: 'bg-gradient-to-r from-emerald-500 to-teal-500',
+    CONFIG: 'bg-gradient-to-r from-gray-500 to-gray-600',
+    AUDIT: 'bg-gradient-to-r from-slate-600 to-slate-700',
+    TIME_CLOCK: 'bg-gradient-to-r from-cyan-500 to-blue-500',
+    SUPPORT: 'bg-gradient-to-r from-lime-500 to-emerald-500'
+  };
+
+  const bgGradients = {
+    RESTAURANT: 'bg-gradient-to-br from-blue-100/80 to-blue-200/40',
+    SNACKBAR: 'bg-gradient-to-br from-orange-100/80 to-orange-200/40',
+    COMMERCE: 'bg-gradient-to-br from-indigo-100/80 to-indigo-200/40',
+    DISTRIBUTOR: 'bg-gradient-to-br from-cyan-100/80 to-cyan-200/40',
+    MANAGER: 'bg-gradient-to-br from-purple-100/80 to-purple-200/40',
+    INVENTORY: 'bg-gradient-to-br from-orange-100/80 to-red-100/40',
+    HR: 'bg-gradient-to-br from-pink-100/80 to-rose-100/40',
+    FINANCE: 'bg-gradient-to-br from-emerald-100/80 to-teal-100/40',
+    CONFIG: 'bg-gradient-to-br from-gray-100/80 to-gray-200/40',
+    AUDIT: 'bg-gradient-to-br from-slate-100/80 to-slate-200/40',
+    TIME_CLOCK: 'bg-gradient-to-br from-cyan-100/80 to-blue-100/40',
+    SUPPORT: 'bg-gradient-to-br from-lime-100/80 to-emerald-100/40'
+  };
+
+  return (
+    <div 
+      className="h-screen flex flex-col relative overflow-hidden font-sans"
+      style={bgUrl ? {
+        backgroundImage: `url(${bgUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed'
+      } : {
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+      }}
+    >
+      {/* Animated Background Orbs */}
+      {!bgUrl && (
+        <>
+          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-white/20 rounded-full blur-[150px] animate-pulse" />
+          <div className="absolute bottom-0 left-0 w-[800px] h-[800px] bg-white/10 rounded-full blur-[150px] animate-pulse delay-1000" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-500/20 rounded-full blur-[120px] animate-pulse delay-2000" />
+        </>
+      )}
+
+      {/* Header - Fixed */}
+      <header className="relative z-20 px-6 md:px-8 py-6 flex justify-between items-center backdrop-blur-md bg-white/10 border-b border-white/20 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-xl border border-white/30 shadow-lg">
+            {state.theme.logoUrl ? (
+              <img src={state.theme.logoUrl} className="w-8 h-8 object-contain" alt="logo" />
+            ) : (
+              <Sparkles className="text-white" size={24} />
+            )}
+          </div>
+          <div>
+            <h1 className="text-white font-black text-xl tracking-tight">{tenantName}</h1>
+            <p className="text-white/70 text-xs uppercase tracking-wider font-medium">
+              Portal de Acesso
+            </p>
+          </div>
+        </div>
         
-        if (module === 'RESTAURANT') navigate('/restaurant'); 
-        else if (module === 'SNACKBAR') navigate('/restaurant');
-        else if (module === 'MANAGER') navigate('/admin'); 
-        else if (module === 'FINANCE') navigate('/finance'); 
-        else if (module === 'CONFIG') navigate('/settings'); 
-        else if (module === 'COMMERCE') navigate('/commerce'); 
-        else if (module === 'DISTRIBUTOR') navigate('/commerce');
-        else if (module === 'INVENTORY') navigate('/inventory');
-        else if (module === 'HR') navigate('/rh');
-        else if (module === 'AUDIT') navigate('/audit');
-        else alert("Módulo em desenvolvimento.");
-    };
+        <div className="flex items-center gap-4">
+          <div className="hidden md:block text-right">
+            <p className="text-white font-bold text-sm flex items-center gap-2">
+              Olá, {userName}
+              <Zap size={14} className="text-yellow-300" />
+            </p>
+            <p className="text-white/60 text-xs">{authState.currentUser?.email}</p>
+          </div>
+          <Button 
+            onClick={logout} 
+            variant="secondary" 
+            className="bg-white/20 hover:bg-white/30 text-white border-white/30 backdrop-blur-sm transition-all duration-300 hover:scale-105"
+          >
+            <LogOut size={18} />
+            <span className="hidden md:inline ml-2">Sair</span>
+          </Button>
+        </div>
+      </header>
 
-    const handleTimeClock = () => {
-        navigate('/time-clock');
-    };
+      {/* Main Content - Scrollable */}
+      <main className="flex-1 overflow-y-auto relative z-10">     
+        <div className="flex flex-col items-center justify-center py-2 md:py-2 px-2 md:px-2 min-h-full">
+          {/* Welcome Section */}
+          <div className="text-center mb-10 md:mb-12 max-w-3xl mx-auto">
+           
+        
+          </div>
 
-    const handleSupport = () => {
-        navigate('/manual');
-    };
-
-    const bgUrl = state.theme.moduleSelectorBgUrl || state.globalSettings.moduleSelectorBgUrl;
-
-    return (
-        <div 
-            className="min-h-screen bg-slate-900 flex flex-col relative overflow-hidden font-sans"
-            style={bgUrl ? {
-                backgroundImage: `url(${bgUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-            } : {}}
-        >
-            {!bgUrl && (
-                <>
-                    <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-600 rounded-full blur-[150px] opacity-10 translate-x-1/2 -translate-y-1/2"></div>
-                    <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-emerald-600 rounded-full blur-[150px] opacity-10 -translate-x-1/2 translate-y-1/2"></div>
-                </>
+          {/* Modules Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-6 max-w-7xl w-full mx-auto pb-8">
+            {/* Time Clock */}
+            <ModuleCard 
+              type="TIME_CLOCK"
+              title="Bater Ponto"
+              desc="Registro de entrada, saída e intervalos de forma rápida"
+              icon={Clock}
+              gradient={gradients.TIME_CLOCK}
+              bgGradient={bgGradients.TIME_CLOCK}
+              onClick={handleTimeClock}
+              customIconUrl={state.theme.moduleIcons?.['TIMECLOCK'] || state.globalSettings.moduleIcons?.['TIMECLOCK']}
+            />
+            
+            {/* Dynamic Modules */}
+            {isModuleAllowed('RESTAURANT') && (
+              <ModuleCard 
+                type="RESTAURANT"
+                title="Restaurante"
+                desc="Salão, mesas, KDS e caixa gastronômico completo"
+                icon={ChefHat}
+                gradient={gradients.RESTAURANT}
+                bgGradient={bgGradients.RESTAURANT}
+                onClick={() => handleSelect('RESTAURANT')}
+                customIconUrl={state.theme.moduleIcons?.['RESTAURANT'] || state.globalSettings.moduleIcons?.['RESTAURANT']}
+                isPopular
+              />
+            )}
+            
+            {isModuleAllowed('SNACKBAR') && (
+              <ModuleCard 
+                type="SNACKBAR"
+                title="Lanchonete"
+                desc="Fluxo rápido com senha, entrega e caixa otimizado"
+                icon={Coffee}
+                gradient={gradients.SNACKBAR}
+                bgGradient={bgGradients.SNACKBAR}
+                onClick={() => handleSelect('SNACKBAR')}
+                customIconUrl={state.theme.moduleIcons?.['SNACKBAR'] || state.globalSettings.moduleIcons?.['SNACKBAR']}
+              />
+            )}
+            
+            {isModuleAllowed('COMMERCE') && (
+              <ModuleCard 
+                type="COMMERCE"
+                title="Varejo"
+                desc="PDV rápido com leitor de código e venda balcão"
+                icon={Store}
+                gradient={gradients.COMMERCE}
+                bgGradient={bgGradients.COMMERCE}
+                onClick={() => handleSelect('COMMERCE')}
+                customIconUrl={state.theme.moduleIcons?.['COMMERCE'] || state.globalSettings.moduleIcons?.['COMMERCE']}
+              />
+            )}
+            
+            {isModuleAllowed('DISTRIBUTOR') && (
+              <ModuleCard 
+                type="DISTRIBUTOR"
+                title="Distribuidora"
+                desc="Venda atacado, rotas e estoque por grade"
+                icon={Truck}
+                gradient={gradients.DISTRIBUTOR}
+                bgGradient={bgGradients.DISTRIBUTOR}
+                onClick={() => handleSelect('DISTRIBUTOR')}
+                customIconUrl={state.theme.moduleIcons?.['DISTRIBUTOR'] || state.globalSettings.moduleIcons?.['DISTRIBUTOR']}
+              />
+            )}
+            
+            {isModuleAllowed('MANAGER') && (
+              <ModuleCard 
+                type="MANAGER"
+                title="Gestor"
+                desc="Backoffice operacional com gestão de cardápio e mesas"
+                icon={Briefcase}
+                gradient={gradients.MANAGER}
+                bgGradient={bgGradients.MANAGER}
+                onClick={() => handleSelect('MANAGER')}
+                customIconUrl={state.theme.moduleIcons?.['MANAGER'] || state.globalSettings.moduleIcons?.['MANAGER']}
+                isNew
+              />
+            )}
+            
+            {isModuleAllowed('INVENTORY') && (
+              <ModuleCard 
+                type="INVENTORY"
+                title="Estoque"
+                desc="Controle de insumos, compras e fichas técnicas"
+                icon={Package}
+                gradient={gradients.INVENTORY}
+                bgGradient={bgGradients.INVENTORY}
+                onClick={() => handleSelect('INVENTORY')}
+                customIconUrl={state.theme.moduleIcons?.['INVENTORY'] || state.globalSettings.moduleIcons?.['INVENTORY']}
+              />
+            )}
+            
+            {isModuleAllowed('HR') && (
+              <ModuleCard 
+                type="HR"
+                title="RH & Equipe"
+                desc="Gestão de ponto, escalas e pré-folha de pagamento"
+                icon={Users}
+                gradient={gradients.HR}
+                bgGradient={bgGradients.HR}
+                onClick={() => handleSelect('HR')}
+                customIconUrl={state.theme.moduleIcons?.['HR'] || state.globalSettings.moduleIcons?.['HR']}
+              />
+            )}
+            
+            {isModuleAllowed('FINANCE') && (
+              <ModuleCard 
+                type="FINANCE"
+                title="Financeiro"
+                desc="Fluxo de caixa, DRE e business intelligence"
+                icon={DollarSign}
+                gradient={gradients.FINANCE}
+                bgGradient={bgGradients.FINANCE}
+                onClick={() => handleSelect('FINANCE')}
+                customIconUrl={state.theme.moduleIcons?.['FINANCE'] || state.globalSettings.moduleIcons?.['FINANCE']}
+              />
+            )}
+            
+            {isModuleAllowed('CONFIG') && (
+              <ModuleCard 
+                type="CONFIG"
+                title="Configurações"
+                desc="Dados da empresa, usuários e segurança"
+                icon={Settings}
+                gradient={gradients.CONFIG}
+                bgGradient={bgGradients.CONFIG}
+                onClick={() => handleSelect('CONFIG')}
+                customIconUrl={state.theme.moduleIcons?.['CONFIG'] || state.globalSettings.moduleIcons?.['CONFIG']}
+              />
+            )}
+            
+            {isModuleAllowed('AUDIT') && (
+              <ModuleCard 
+                type="AUDIT"
+                title="Auditoria"
+                desc="Logs de atividades e monitoramento de segurança"
+                icon={ShieldCheck}
+                gradient={gradients.AUDIT}
+                bgGradient={bgGradients.AUDIT}
+                onClick={() => handleSelect('AUDIT')}
+                customIconUrl={state.theme.moduleIcons?.['AUDIT'] || state.globalSettings.moduleIcons?.['AUDIT']}
+              />
             )}
 
-            <header className="p-6 md:p-8 flex justify-between items-center relative z-10">
-                <div className="flex items-center gap-3">
-                    <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/10">
-                        {state.theme.logoUrl ? (
-                            <img src={state.theme.logoUrl} className="w-8 h-8 object-contain" />
-                        ) : (
-                            <Grid className="text-white" size={24} />
-                        )}
-                    </div>
-                    <div>
-                        <h1 className="text-white font-bold text-lg leading-tight">{tenantName}</h1>
-                        <p className="text-slate-400 text-xs uppercase tracking-widest">Portal de Acesso</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="hidden md:block text-right">
-                        <p className="text-white text-sm font-bold">{authState.currentUser?.name}</p>
-                        <p className="text-slate-400 text-xs">{authState.currentUser?.email}</p>
-                    </div>
-                    <Button onClick={logout} variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-transparent">
-                        <LogOut size={18} />
-                    </Button>
-                </div>
-            </header>
+            {/* Support */}
+            <ModuleCard 
+              type="SUPPORT"
+              title="Suporte & Ajuda"
+              desc="Precisa de ajuda? Fale com nossos especialistas"
+              icon={LifeBuoy}
+              gradient={gradients.SUPPORT}
+              bgGradient={bgGradients.SUPPORT}
+              onClick={handleSupport}
+              customIconUrl={state.theme.moduleIcons?.['SUPPORT'] || state.globalSettings.moduleIcons?.['SUPPORT']}
+            />
+          </div>
 
-            <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-6 relative z-10">
-                <div className="text-center mb-8 max-w-2xl mx-auto">
-                    <h2 className="text-3xl md:text-4xl font-black text-white mb-4 tracking-tight">Escolha seu Ambiente</h2>
-                    <p className="text-slate-400 text-base">Selecione o módulo que deseja acessar agora.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 max-w-6xl w-full">
-                    {/* Bater Ponto - Acessível a todos os usuários */}
-                    <ModuleCard type="TIME_CLOCK" title="Bater Ponto" desc="Registro de entrada, saída e intervalos." icon={Clock} colorClass="text-cyan-400" onClick={handleTimeClock} customIconUrl={state.theme.moduleIcons?.['TIMECLOCK'] || state.globalSettings.moduleIcons?.['TIMECLOCK']} />
-                    
-                    {isModuleAllowed('RESTAURANT') && (
-                        <ModuleCard type="RESTAURANT" title="Restaurante" desc="Salão, Mesas, KDS e Caixa Gastronômico." icon={ChefHat} colorClass="text-blue-600" onClick={() => handleSelect('RESTAURANT')} customIconUrl={state.theme.moduleIcons?.['RESTAURANT'] || state.globalSettings.moduleIcons?.['RESTAURANT']} />
-                    )}
-                    {isModuleAllowed('SNACKBAR') && (
-                        <ModuleCard type="SNACKBAR" title="Lanchonete" desc="Fluxo Rápido: Caixa, Senha e Entrega." icon={Coffee} colorClass="text-orange-500" onClick={() => handleSelect('SNACKBAR')} customIconUrl={state.theme.moduleIcons?.['SNACKBAR'] || state.globalSettings.moduleIcons?.['SNACKBAR']} />
-                    )}
-                    {isModuleAllowed('COMMERCE') && (
-                        <ModuleCard type="COMMERCE" title="Varejo" desc="PDV Rápido, Leitor de Código e Venda Balcão." icon={Store} colorClass="text-indigo-500" onClick={() => handleSelect('COMMERCE')} customIconUrl={state.theme.moduleIcons?.['COMMERCE'] || state.globalSettings.moduleIcons?.['COMMERCE']} />
-                    )}
-                    {isModuleAllowed('DISTRIBUTOR') && (
-                        <ModuleCard type="DISTRIBUTOR" title="Distribuidora" desc="Venda Atacado, Rotas e Estoque de Grade." icon={Truck} colorClass="text-cyan-600" onClick={() => handleSelect('DISTRIBUTOR')} customIconUrl={state.theme.moduleIcons?.['DISTRIBUTOR'] || state.globalSettings.moduleIcons?.['DISTRIBUTOR']} />
-                    )}
-                    {isModuleAllowed('MANAGER') && (
-                        <ModuleCard type="MANAGER" title="Gestor" desc="Backoffice Operacional. Cardápio e Mesas." icon={Briefcase} colorClass="text-purple-500" onClick={() => handleSelect('MANAGER')} customIconUrl={state.theme.moduleIcons?.['MANAGER'] || state.globalSettings.moduleIcons?.['MANAGER']} />
-                    )}
-                    {isModuleAllowed('INVENTORY') && (
-                        <ModuleCard type="INVENTORY" title="Estoque" desc="Insumos, Compras e Fichas Técnicas." icon={Package} colorClass="text-orange-500" onClick={() => handleSelect('INVENTORY')} customIconUrl={state.theme.moduleIcons?.['INVENTORY'] || state.globalSettings.moduleIcons?.['INVENTORY']} />
-                    )}
-                    {isModuleAllowed('HR') && (
-                        <ModuleCard type="HR" title="RH & Equipe" desc="Gestão de Ponto, Escalas e Pré-Folha." icon={Users} colorClass="text-pink-500" onClick={() => handleSelect('HR')} customIconUrl={state.theme.moduleIcons?.['HR'] || state.globalSettings.moduleIcons?.['HR']} />
-                    )}
-                    {isModuleAllowed('FINANCE') && (
-                        <ModuleCard type="FINANCE" title="Financeiro" desc="Fluxo de Caixa, DRE e BI." icon={DollarSign} colorClass="text-emerald-500" onClick={() => handleSelect('FINANCE')} customIconUrl={state.theme.moduleIcons?.['FINANCE'] || state.globalSettings.moduleIcons?.['FINANCE']} />
-                    )}
-                    {isModuleAllowed('CONFIG') && (
-                        <ModuleCard type="CONFIG" title="Configurações" desc="Dados da empresa e segurança." icon={Settings} colorClass="text-gray-500" onClick={() => handleSelect('CONFIG')} customIconUrl={state.theme.moduleIcons?.['CONFIG'] || state.globalSettings.moduleIcons?.['CONFIG']} />
-                    )}
-                    {isModuleAllowed('AUDIT') && (
-                        <ModuleCard type="AUDIT" title="Auditoria" desc="Logs de atividades e segurança." icon={ShieldCheck} colorClass="text-slate-600" onClick={() => handleSelect('AUDIT')} customIconUrl={state.theme.moduleIcons?.['AUDIT'] || state.globalSettings.moduleIcons?.['AUDIT']} />
-                    )}
-
-                    {/* Suporte */}
-                    <ModuleCard type="SUPPORT" title="Suporte & Ajuda" desc="Precisa de algo? Fale com nossos especialistas." icon={LifeBuoy} colorClass="text-lime-500" onClick={handleSupport} customIconUrl={state.theme.moduleIcons?.['SUPPORT'] || state.globalSettings.moduleIcons?.['SUPPORT']} />
-                </div>
-            </main>
+          {/* Footer */}
+          <div className="text-center py-6 mt-4">
+            <p className="text-white/50 text-sm">
+              © {new Date().getFullYear()} {tenantName} - Todos os direitos reservados
+            </p>
+          </div>
         </div>
-    );
+      </main>
+    </div>
+  );
 };

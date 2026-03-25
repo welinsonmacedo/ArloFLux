@@ -25,26 +25,22 @@ export const Login: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+ useEffect(() => {
   if (!authState.currentUser) return;
 
   let target = "/modules";
 
   if (authState.currentUser.role === Role.CLIENT) {
     target = "/client/home";
-  } 
-  else if (authState.currentUser.role === Role.SUPER_ADMIN) {
+  } else if (authState.currentUser.role === Role.SUPER_ADMIN) {
     target = "/dashboard";
-  } 
-  else if (authState.currentUser.role === Role.ADMIN) {
-    target = "/admin";
   }
 
-  if (location.pathname !== target) {
+  if (window.location.pathname !== target) {
     navigate(target, { replace: true });
   }
 
-}, [authState.currentUser, location.pathname, navigate]);
+}, [authState.currentUser, navigate]);
 
   useEffect(() => {
       const params = new URLSearchParams(location.search);
