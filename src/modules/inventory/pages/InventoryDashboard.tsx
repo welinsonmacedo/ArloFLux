@@ -1,12 +1,12 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { useAuth } from '@/core/context/AuthProvider';
 import { 
     Package, ShoppingCart, Truck, LogOut, Grid, 
-    ClipboardList, Archive, PlusCircle, FileInput, Scale
+    ClipboardList, Archive, PlusCircle, FileInput, Scale,
+    Menu, X, ChevronRight, Home, User, Settings
 } from 'lucide-react';
 
 // Importando Sub-páginas de Estoque
@@ -14,23 +14,40 @@ import { AdminInventory } from '@/modules/inventory/pages/admin/AdminInventory';
 import { AdminPurchaseSuggestions } from '@/modules/inventory/pages/admin/AdminPurchaseSuggestions';
 import { AdminPurchaseOrders } from '@/modules/inventory/pages/admin/AdminPurchaseOrders';
 
-
 export const InventoryDashboard: React.FC = () => {
   const { state: restState } = useRestaurant();
   const { state: authState, logout } = useAuth();
   const { planLimits, allowedFeatures } = restState;
   const location = useLocation();
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isUserMenuOpen && !(event.target as Element).closest('.user-menu')) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [isUserMenuOpen]);
 
   // Definição das Abas do Módulo Estoque
   const tabs = [
-    { path: '/inventory', label: 'ITENS', icon: Package, exact: true, featureKeys: ['inv_items'] },
-    { path: '/inventory/new', label: 'NOVO ITEM', icon: PlusCircle, featureKeys: ['inv_new_item'] },
-    { path: '/inventory/entry', label: 'ENTRADA DE NOTA', icon: FileInput, featureKeys: ['inv_entry'] },
-    { path: '/inventory/count', label: 'BALANCO', icon: Scale, featureKeys: ['inv_count'] },
-    { path: '/inventory/purchases', label: 'SUGESTOES', icon: ShoppingCart, featureKeys: ['inv_purchases'] },
-    { path: '/inventory/suppliers', label: 'FORNECEDORES', icon: Truck, featureKeys: ['inv_suppliers'] },
-    { path: '/inventory/orders', label: 'ORDENS DE PEDIDO', icon: ClipboardList, featureKeys: ['inv_orders'] },
+    { path: '/inventory', label: 'ITENS', icon: Package, exact: true, featureKeys: ['inv_items'], description: 'Gerenciar estoque' },
+    { path: '/inventory/new', label: 'NOVO ITEM', icon: PlusCircle, featureKeys: ['inv_new_item'], description: 'Adicionar produto' },
+    { path: '/inventory/entry', label: 'ENTRADA DE NOTA', icon: FileInput, featureKeys: ['inv_entry'], description: 'Registrar nota' },
+    { path: '/inventory/count', label: 'BALANÇO', icon: Scale, featureKeys: ['inv_count'], description: 'Inventário físico' },
+    { path: '/inventory/purchases', label: 'SUGESTÕES', icon: ShoppingCart, featureKeys: ['inv_purchases'], description: 'Compras sugeridas' },
+    { path: '/inventory/suppliers', label: 'FORNECEDORES', icon: Truck, featureKeys: ['inv_suppliers'], description: 'Gerenciar fornecedores' },
+    { path: '/inventory/orders', label: 'PEDIDOS', icon: ClipboardList, featureKeys: ['inv_orders'], description: 'Ordens de compra' },
   ];
 
   // Filtra abas
@@ -58,98 +75,259 @@ export const InventoryDashboard: React.FC = () => {
       navigate('/modules');
   };
 
+  const handleLogout = () => {
+    logout();
+  };
+
+  const getCurrentTabInfo = () => {
+    const currentPath = location.pathname;
+    const tab = visibleTabs.find(tab => 
+      tab.exact ? currentPath === tab.path : currentPath.startsWith(tab.path)
+    );
+    return tab || visibleTabs[0];
+  };
+
+  const currentTab = getCurrentTabInfo();
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
         
-        {/* TOP BAR / HEADER */}
-        <header className="bg-orange-900 text-white shadow-lg shrink-0 z-30">
-            <div className="max-w-[1920px] mx-auto">
+        {/* TOP BAR / HEADER - Modern Design */}
+        <header className="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-xl shrink-0 z-30 relative">
+            <div className="w-full mx-auto">
                 
-                {/* Linha Superior */}
-                <div className="px-6 py-4 flex justify-between items-center border-b border-orange-800">
-                    <div className="flex items-center gap-4">
-                        <div className="bg-white/10 p-2 rounded-xl backdrop-blur-md border border-white/10">
+                {/* Main Header Row */}
+                <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex justify-between items-center">
+                    {/* Logo and Restaurant Info */}
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        {/* Mobile Menu Button */}
+                        <button
+                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                            className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/50"
+                            aria-label="Menu"
+                        >
+                            {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                        </button>
+
+                        {/* Logo */}
+                        <div className="bg-white/15 p-2 rounded-xl backdrop-blur-sm shadow-lg">
                             {restState.theme.logoUrl ? (
-                                <img src={restState.theme.logoUrl} className="h-8 w-8 object-contain" />
+                                <img src={restState.theme.logoUrl} className="h-7 w-7 sm:h-8 sm:w-8 object-contain" alt="Logo" />
                             ) : (
-                                <Archive size={24} />
+                                <Archive size={20} className="sm:w-6 sm:h-6" />
                             )}
                         </div>
-                        <div>
-                            <h1 className="font-bold text-lg leading-none tracking-tight">{restState.theme.restaurantName}</h1>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[10px] font-bold bg-orange-600 px-2 py-0.5 rounded text-white uppercase tracking-widest">
-                                    Módulo Estoque
-                                </span>
-                                <span className="text-[10px] text-orange-200">
-                                    {authState.currentUser?.name}
+                        
+                        {/* Restaurant Info */}
+                        <div className="hidden sm:block">
+                            <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight">
+                                {restState.theme.restaurantName}
+                            </h1>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] sm:text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full uppercase tracking-wider backdrop-blur-sm">
+                                    Estoque
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    {/* Right Side Actions */}
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        {/* Current Module Badge - Mobile */}
+                        <div className="sm:hidden text-right">
+                            <p className="text-xs font-semibold">{restState.theme.restaurantName?.split(' ')[0]}</p>
+                            <span className="text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full uppercase">
+                                Estoque
+                            </span>
+                        </div>
+
+                        {/* User Menu */}
+                        <div className="relative user-menu">
+                            <button
+                                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                                className="flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg hover:bg-white/10 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/50"
+                            >
+                                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center">
+                                    <User size={14} className="sm:w-4 sm:h-4" />
+                                </div>
+                                <span className="hidden sm:inline text-sm font-medium">
+                                    {authState.currentUser?.name?.split(' ')[0] || 'Usuário'}
+                                </span>
+                                <ChevronRight size={14} className={`hidden sm:block transition-transform duration-200 ${isUserMenuOpen ? 'rotate-90' : ''}`} />
+                            </button>
+
+                            {/* Dropdown Menu */}
+                            {isUserMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl py-2 z-50 border border-gray-100 animate-fadeIn">
+                                    <div className="px-4 py-2 border-b border-gray-100">
+                                        <p className="text-sm font-semibold text-gray-800">{authState.currentUser?.name}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">{authState.currentUser?.email}</p>
+                                    </div>
+                                    <button
+                                        onClick={handleLogout}
+                                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                                    >
+                                        <LogOut size={16} /> Sair
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modules Button - Desktop */}
                         <button 
                             onClick={handleExitToModules}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-orange-800 hover:bg-orange-700 transition-colors border border-orange-700"
+                            className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-white/15 hover:bg-white/25 transition-all duration-200 border border-white/20"
                         >
                             <Grid size={16} /> Módulos
-                        </button>
-                        <button 
-                            onClick={logout}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-300 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20 hover:border-red-500"
-                        >
-                            <LogOut size={16} /> Sair
                         </button>
                     </div>
                 </div>
 
-                {/* Linha Inferior */}
-                <div className="px-6 flex gap-1 overflow-x-auto scrollbar-hide pt-2">
-                    {visibleTabs.map(tab => {
-                        const isActive = tab.exact 
-                            ? location.pathname === tab.path 
-                            : location.pathname.startsWith(tab.path);
-                        
-                        return (
-                            <Link 
-                                key={tab.path}
-                                to={tab.path}
-                                className={`
-                                    flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap
-                                    ${isActive 
-                                        ? 'border-orange-400 text-white bg-white/5 rounded-t-lg' 
-                                        : 'border-transparent text-orange-200 hover:text-white hover:bg-white/5 rounded-t-lg'}
-                                `}
-                            >
-                                <tab.icon size={18} className={isActive ? 'text-orange-300' : ''} />
-                                {tab.label}
-                            </Link>
-                        );
-                    })}
+                {/* Mobile Navigation Menu */}
+                {isMobileMenuOpen && (
+                    <div className="lg:hidden bg-orange-800/95 backdrop-blur-lg border-t border-orange-700/50 animate-slideDown">
+                        <div className="px-4 py-3 space-y-1">
+                            {visibleTabs.map(tab => {
+                                const isActive = tab.exact 
+                                    ? location.pathname === tab.path 
+                                    : location.pathname.startsWith(tab.path);
+                                
+                                return (
+                                    <Link 
+                                        key={tab.path}
+                                        to={tab.path}
+                                        className={`
+                                            flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
+                                            ${isActive 
+                                                ? 'bg-orange-500/30 text-white' 
+                                                : 'text-orange-100 hover:bg-white/10'}
+                                        `}
+                                    >
+                                        <tab.icon size={18} />
+                                        <div className="flex-1">
+                                            <span className="font-medium text-sm">{tab.label}</span>
+                                            <p className="text-xs opacity-75">{tab.description}</p>
+                                        </div>
+                                        {isActive && <ChevronRight size={16} />}
+                                    </Link>
+                                );
+                            })}
+                            
+                            <div className="pt-3 mt-2 border-t border-orange-700/50">
+                                <button
+                                    onClick={handleExitToModules}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-orange-100 hover:bg-white/10 transition-all duration-200"
+                                >
+                                    <Grid size={18} />
+                                    <span className="font-medium text-sm">Todos os Módulos</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Desktop Navigation Tabs */}
+                <div className="hidden lg:block px-6 lg:px-8">
+                    <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                        {visibleTabs.map(tab => {
+                            const isActive = tab.exact 
+                                ? location.pathname === tab.path 
+                                : location.pathname.startsWith(tab.path);
+                            
+                            return (
+                                <Link 
+                                    key={tab.path}
+                                    to={tab.path}
+                                    className={`
+                                        group relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap
+                                        ${isActive 
+                                            ? 'text-white bg-white/10 rounded-t-lg' 
+                                            : 'text-orange-100 hover:text-white hover:bg-white/5 rounded-t-lg'}
+                                    `}
+                                >
+                                    <tab.icon size={18} className={`transition-transform group-hover:scale-110 ${isActive ? 'text-orange-200' : ''}`} />
+                                    <span>{tab.label}</span>
+                                    {isActive && (
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-400 rounded-full" />
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
         </header>
 
-        {/* CONTEÚDO PRINCIPAL - Alterado para overflow-hidden para garantir h-full real */}
-        <main className="flex-1 overflow-hidden bg-gray-50 relative p-4 md:p-8">
-            <div className="max-w-[1920px] mx-auto h-full">
+        {/* Mobile Tab Indicator */}
+        <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                {currentTab && (
+                    <>
+                        <currentTab.icon size={16} className="text-orange-600" />
+                        <span className="text-sm font-semibold text-gray-800">{currentTab.label}</span>
+                    </>
+                )}
+            </div>
+            <span className="text-xs text-gray-500">{currentTab?.description}</span>
+        </div>
+
+        {/* MAIN CONTENT */}
+        <main className="flex-1 overflow-auto bg-gray-50">
+            <div className="w-full mx-auto p-4 sm:p-6 lg:p-8">
                 <Routes>
                     <Route path="/" element={<AdminInventory view="ITEMS" />} />
                     <Route path="new" element={<AdminInventory view="NEW_ITEM" />} />
                     <Route path="entry" element={<AdminInventory view="ENTRY" />} />
                     <Route path="count" element={<AdminInventory view="COUNT" />} />
                     <Route path="suppliers" element={<AdminInventory view="SUPPLIERS" />} />
-
-                    
                     <Route path="purchases" element={<AdminPurchaseSuggestions />} />
                     <Route path="orders" element={<AdminPurchaseOrders />} />
-
-                    {/* Fallback */}
                     <Route path="*" element={<Navigate to="" replace />} />
                 </Routes>
             </div>
         </main>
+
+        {/* Add these styles to your global CSS */}
+        <style >{`
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            @keyframes slideDown {
+                from {
+                    opacity: 0;
+                    transform: translateY(-10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            .animate-fadeIn {
+                animation: fadeIn 0.2s ease-out;
+            }
+            
+            .animate-slideDown {
+                animation: slideDown 0.3s ease-out;
+            }
+            
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+            
+            .scrollbar-hide {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+        `}</style>
     </div>
   );
 };

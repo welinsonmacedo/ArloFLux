@@ -149,7 +149,9 @@ export const ModuleSelector: React.FC = () => {
       DISTRIBUTOR: '/commerce',
       INVENTORY: '/inventory',
       HR: '/rh',
-      AUDIT: '/audit'
+      AUDIT: '/audit',
+      SUPPORT: '/manual',
+
     };
     
     navigate(routes[module] || '/');

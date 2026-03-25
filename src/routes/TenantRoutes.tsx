@@ -22,6 +22,7 @@ import { Role } from "@/types";
 
 import { ProtectedRestaurantRoute } from "./guards/ProtectedRestaurantRoute";
 import { ClientRoutes } from "./ClientRoutes";
+import { ManualPage } from "@/modules/support/pages/ManualPage";
 
 export const TenantRoutes = () => {
   return (
@@ -117,7 +118,14 @@ export const TenantRoutes = () => {
           </ProtectedRestaurantRoute>
         }
       />
-
+  <Route
+        path="/manual/*"
+        element={
+          <ProtectedRestaurantRoute>
+            <ManualPage/>
+          </ProtectedRestaurantRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>
   );
