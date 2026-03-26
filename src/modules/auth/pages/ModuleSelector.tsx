@@ -117,7 +117,7 @@ export const ModuleSelector: React.FC = () => {
   const { logout, state: authState } = useAuth();
   const navigate = useNavigate();
 
-  const allowed = state.allowedModules || ['RESTAURANT', 'MANAGER', 'CONFIG', 'FINANCE', 'COMMERCE', 'INVENTORY', 'HR', 'AUDIT'];
+  const allowed = state.allowedModules || ['RESTAURANT', 'MANAGER', 'CONFIG', 'FINANCE', 'COMMERCE', 'INVENTORY', 'HR', 'AUDIT','TIMECLOCK','SUPPORT'];
   const tenantName = state.theme.restaurantName;
   const userName = authState.currentUser?.name?.split(' ')[0] || 'Usuário';
 
@@ -151,6 +151,7 @@ export const ModuleSelector: React.FC = () => {
       HR: '/rh',
       AUDIT: '/audit',
       SUPPORT: '/manual',
+      TIMECLOCK: '/time-clock'
 
     };
     
