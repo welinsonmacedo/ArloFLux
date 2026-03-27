@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { RestaurantTenant, PlanType, Plan, SystemModule } from '@/types';
 import { supabase } from '@/core/api/supabaseClient';
@@ -11,7 +10,6 @@ export const uploadImage = async (file: File, path: string): Promise<string> => 
     const filePath = `${path}/${fileName}`;
 
     try {
-        // Try to upload
         const { error: uploadError } = await supabase.storage
             .from('branding')
             .upload(filePath, file);
@@ -196,7 +194,6 @@ const saasReducer = (state: SaaSState, action: SaaSAction): SaaSState => {
         };
 
     case 'CREATE_PLAN':
-        // Optimistic update, will be replaced by fetch or real ID
         return {
             ...state,
             plans: [...state.plans, { ...action.plan, id: 'temp-' + Date.now() }] 
@@ -317,7 +314,6 @@ export const SaaSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchPlans();
   }, []);
 
-  // Fetch global settings regardless of authentication
   useEffect(() => {
     let isMounted = true;
 
@@ -365,59 +361,8 @@ export const SaaSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     if (state.isAuthenticated) {
-        const cleanBase64Themes = async () => {
-            try {
-                // Clean global settings
-                const { data: configData } = await supabase.from('saas_config').select('id, global_settings').eq('id', 1).maybeSingle();
-                if (configData && configData.global_settings) {
-                    let changed = false;
-                    let newSettings = { ...configData.global_settings };
-                    if (newSettings.loginBgUrl?.startsWith('data:image')) { newSettings.loginBgUrl = ''; changed = true; }
-                    if (newSettings.moduleSelectorBgUrl?.startsWith('data:image')) { newSettings.moduleSelectorBgUrl = ''; changed = true; }
-                    if (changed) {
-                        await supabase.from('saas_config').update({ global_settings: newSettings }).eq('id', 1);
-                        console.log("Cleaned base64 from saas_config");
-                    }
-                }
-
-                // Clean tenants one by one to avoid OOM
-                const { data: ids } = await supabase.from('tenants').select('id');
-                if (ids) {
-                    for (const row of ids) {
-                        const { data: tenant } = await supabase.from('tenants').select('theme_config').eq('id', row.id).maybeSingle();
-                        if (tenant && tenant.theme_config) {
-                            let changed = false;
-                            let newTheme = { ...tenant.theme_config };
-                            if (newTheme.logoUrl?.startsWith('data:image')) { newTheme.logoUrl = ''; changed = true; }
-                            if (newTheme.loginBgUrl?.startsWith('data:image')) { newTheme.loginBgUrl = ''; changed = true; }
-                            if (newTheme.moduleSelectorBgUrl?.startsWith('data:image')) { newTheme.moduleSelectorBgUrl = ''; changed = true; }
-                            
-                            // Check module icons
-                            if (newTheme.moduleIcons) {
-                                for (const key in newTheme.moduleIcons) {
-                                    if (newTheme.moduleIcons[key]?.startsWith('data:image')) {
-                                        newTheme.moduleIcons[key] = '';
-                                        changed = true;
-                                    }
-                                }
-                            }
-
-                            if (changed) {
-                                await supabase.from('tenants').update({ theme_config: newTheme }).eq('id', row.id);
-                                console.log(`Cleaned base64 from tenant ${row.id}`);
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("Error cleaning base64 themes:", e);
-            }
-        };
-
         const fetchTenants = async () => {
             try {
-                await cleanBase64Themes(); // Run cleanup first
-                
                 const { data, error } = await supabase
                     .from('tenants')
                     .select('*')

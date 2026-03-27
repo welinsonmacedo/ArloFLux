@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { InventoryItem, InventoryRecipeItem, InventoryLog, Supplier, PurchaseEntry, InventoryType } from '@/types';
 import { supabase, logAudit } from '@/core/api/supabaseClient';
+import { offlineService } from '@/core/api/offlineService';
 import { useRestaurant } from './RestaurantContext'; 
 import { useAuth } from './AuthProvider';
 
@@ -57,7 +57,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const fetchData = useCallback(async () => {
         if (!tenantId) return;
         
-        if (!navigator.onLine) return; // Não tenta buscar se estiver offline
+        if (!navigator.onLine) return; 
 
         const [invRes, recipesRes, logsRes, suppRes] = await Promise.all([
             supabase.from('inventory_items').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('name'),
@@ -91,7 +91,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     salePrice: Number(i.sale_price) || 0, 
                     type: (i.type || 'INGREDIENT').toUpperCase() as InventoryType, 
                     category: i.category, 
-                    description: i.description || '', // Mapeia descrição
+                    description: i.description || '', 
                     image: i.image, 
                     recipe: recipeItems,
                     isExtra: i.is_extra || false,
@@ -141,14 +141,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'suppliers', filter: `tenant_id=eq.${tenantId}` }, fetchData)
         .subscribe();
 
-    // Fallback polling
-    const interval = setInterval(() => {
-        fetchData();
-    }, 5000);
+    // ✨ CORREÇÃO: Removido o setInterval de polling para poupar a cota de leitura
 
     return () => { 
         supabase.removeChannel(channel); 
-        clearInterval(interval);
     };
   }, [tenantId, fetchData]);
 

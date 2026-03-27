@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
 import { Table, Order, ServiceCall, OrderStatus, OrderType, DeliveryInfo } from '@/types';
 import { supabase, logAudit } from '@/core/api/supabaseClient';
@@ -6,7 +5,7 @@ import { offlineService } from '@/core/api/offlineService';
 import { useRestaurant } from './RestaurantContext';
 import { useUI } from './UIContext';
 import { useAuth } from './AuthProvider';
-import { sanitizeObject } from '@/core/security/security'; // Importando segurança
+import { sanitizeObject } from '@/core/security/security';
 
 interface OrderState {
   tables: Table[];
@@ -104,8 +103,7 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const fetchData = useCallback(async (silent = false) => {
       if (!tenantId) return;
-      
-      if (!navigator.onLine) return; // Não tenta buscar se estiver offline
+      if (!navigator.onLine) return;
 
       if (!silent) localDispatch({ type: 'SET_LOADING', isLoading: true });
       const yesterday = new Date(); yesterday.setHours(yesterday.getHours() - 24);
@@ -138,55 +136,55 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               });
           }
 
-          if (tablesRes.data) localDispatch({ type: 'SET_TABLES', tables: tablesRes.data.map((t: any) => ({ 
-              id: t.id, 
-              number: t.number, 
-              status: t.status, 
-              customerName: t.customer_name, 
-              accessCode: t.access_code, 
-              openedBy: openerMap[t.id] || null, 
-              assignedWaiterId: staffMap[t.id]?.id || null,
-              assignedWaiterName: staffMap[t.id]?.name || null
-          })) });
+          let mappedTables: Table[] = [];
+          if (tablesRes.data) {
+              mappedTables = tablesRes.data.map((t: any) => ({ 
+                  id: t.id, number: t.number, status: t.status, customerName: t.customer_name, 
+                  accessCode: t.access_code, openedBy: openerMap[t.id] || null, 
+                  assignedWaiterId: staffMap[t.id]?.id || null, assignedWaiterName: staffMap[t.id]?.name || null
+              }));
+              localDispatch({ type: 'SET_TABLES', tables: mappedTables });
+          }
           
+          let mappedOrders: Order[] = [];
           if (ordersRes.data) {
-              const mappedOrders = ordersRes.data.map((o: any) => ({
-                  id: o.id, 
-                  tableId: o.table_id, 
-                  timestamp: new Date(o.created_at), 
-                  isPaid: o.is_paid, 
-                  status: o.status,
-                  type: o.order_type || 'DINE_IN',
-                  deliveryInfo: o.delivery_info,
+              mappedOrders = ordersRes.data.map((o: any) => ({
+                  id: o.id, tableId: o.table_id, timestamp: new Date(o.created_at), isPaid: o.is_paid, status: o.status,
+                  type: o.order_type || 'DINE_IN', deliveryInfo: o.delivery_info,
                   items: (o.items || []).map((i: any) => ({ 
-                      id: i.id, 
-                      productId: i.product_id, 
-                      inventoryItemId: i.inventory_item_id,
-                      quantity: Number(i.quantity) || 0, 
-                      notes: i.notes, 
-                      status: i.status, 
-                      productName: i.product_name, 
-                      productType: i.product_type, 
-                      productPrice: Number(i.product_price) || 0, 
-                      productCostPrice: Number(i.product_cost_price) || 0
+                      id: i.id, productId: i.product_id, inventoryItemId: i.inventory_item_id, quantity: Number(i.quantity) || 0, 
+                      notes: i.notes, status: i.status, productName: i.product_name, productType: i.product_type, 
+                      productPrice: Number(i.product_price) || 0, productCostPrice: Number(i.product_cost_price) || 0
                   }))
               }));
               localDispatch({ type: 'SET_ORDERS', orders: mappedOrders });
-              localStorage.setItem(`order_cache_${tenantId}`, JSON.stringify({
-                  tables: state.tables,
+          }
+
+          let mappedCalls: ServiceCall[] = [];
+          if (callsRes.data) {
+              mappedCalls = callsRes.data.map((c: any) => ({ 
+                  id: c.id, tableId: c.table_id, status: c.status, timestamp: new Date(c.created_at), reason: c.reason 
+              }));
+              localDispatch({ type: 'SET_CALLS', calls: mappedCalls });
+          }
+
+          // Correção Crítica: O Cache agora usa as variáveis recém mapeadas e não o estado.
+          if (tablesRes.data || ordersRes.data || callsRes.data) {
+               localStorage.setItem(`order_cache_${tenantId}`, JSON.stringify({
+                  tables: mappedTables.length > 0 ? mappedTables : undefined, // fallback pra não quebrar
                   orders: mappedOrders,
-                  serviceCalls: state.serviceCalls
+                  serviceCalls: mappedCalls
               }));
           }
 
-          if (callsRes.data) localDispatch({ type: 'SET_CALLS', calls: callsRes.data.map((c: any) => ({ id: c.id, tableId: c.table_id, status: c.status, timestamp: new Date(c.created_at), reason: c.reason })) });
       } catch (e) {
           console.error("Erro ao buscar dados:", e);
       } finally {
           if (!silent) localDispatch({ type: 'SET_LOADING', isLoading: false });
       }
 
-  }, [tenantId, state.tables, state.serviceCalls]);
+  // ✨ Correção do Loop Infinito: estado removido da dependência.
+  }, [tenantId]); 
 
   useEffect(() => {
       if (!tenantId) return;
@@ -205,14 +203,10 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'staff', filter: `tenant_id=eq.${tenantId}` }, handleRealtimeUpdate)
           .subscribe();
 
-      // Fallback polling
-      const interval = setInterval(() => {
-          fetchData(true);
-      }, 5000);
+      // ✨ Correção Crítica 2: Removido o setInterval que forçava um fetch a cada 5 segundos
 
       return () => { 
           supabase.removeChannel(channel); 
-          clearInterval(interval);
       };
   }, [tenantId, fetchData]);
 
@@ -221,7 +215,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const placeOrder = async (params: PlaceOrderParams) => {
       if(!tenantId) return;
 
-      // Sanitização de Entrada
       const safeDeliveryInfo = params.deliveryInfo ? sanitizeObject(params.deliveryInfo) : null;
       const safeItems = params.items.map(i => ({
           productId: i.productId || null,
@@ -237,7 +230,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           finalOrderType = tableId ? 'DINE_IN' : 'PDV'; 
       }
 
-      // Chamada RPC para garantir integridade de preços e estoque no servidor
       if (!navigator.onLine) {
           await offlineService.addPendingOperation({
               type: 'PLACE_ORDER',
@@ -296,7 +288,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const processPosSale = async (data: any) => {
       if(!tenantId) return;
       
-      // Sanitização
       const safeData = sanitizeObject(data);
 
       const enrichedItems = safeData.items.map((i: any) => ({
@@ -307,7 +298,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           type: i.type || null
       }));
       
-      // Chamada RPC
       if (!navigator.onLine) {
           await offlineService.addPendingOperation({
               type: 'PROCESS_POS_SALE',
@@ -493,14 +483,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   return;
               }
 
-              console.log("DEBUG: RPC open_table parameters:", JSON.stringify({
-                  p_tenant_id: tenantId,
-                  p_table_id: action.tableId,
-                  p_customer_name: sanitizeObject(action.customerName),
-                  p_access_code: action.accessCode,
-                  p_user_id: user_id || null
-              }));
-              
               let openTableError = null;
               const { error: resError } = await supabase.rpc('open_table', {
                   p_tenant_id: tenantId,
@@ -511,9 +493,7 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               });
               openTableError = resError;
 
-              // Fallback for older database schema without p_user_id
               if (openTableError && openTableError.code === 'PGRST202') {
-                  console.warn("RPC open_table (5 params) not found, trying 4 params fallback...");
                   const { error: fallbackError } = await supabase.rpc('open_table', {
                       p_tenant_id: tenantId,
                       p_table_id: action.tableId,
@@ -534,7 +514,6 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   console.error("Erro: tableId não fornecido para CLOSE_TABLE");
                   break;
               }
-              // Resolve chamadas pendentes da mesa
               await supabase.from('service_calls')
                   .update({ status: 'RESOLVED' })
                   .eq('table_id', action.tableId)

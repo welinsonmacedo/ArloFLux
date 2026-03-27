@@ -1,5 +1,4 @@
-
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { Transaction, CashSession, CashMovement, Expense } from '@/types';
 import { supabase } from '@/core/api/supabaseClient';
 import { useRestaurant } from './RestaurantContext';
@@ -39,11 +38,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     cashMovements: []
   });
 
-  // 1. Busca APENAS Transações e Despesas (Não afeta o status do caixa)
+  // ✨ CORREÇÃO: Ref para manter o ID da sessão sem causar re-renders no useEffect do websocket
+  const activeSessionRef = useRef<CashSession | null>(null);
+
+  useEffect(() => {
+      activeSessionRef.current = state.activeCashSession;
+  }, [state.activeCashSession]);
+
   const fetchFinancialData = useCallback(async () => {
       if (!tenantId) return;
       
-      // Load from cache first
       const cached = localStorage.getItem(`finance_cache_${tenantId}`);
       if (cached) {
           try {
@@ -89,18 +93,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           expenses: mappedExpenses
       }));
 
-      // Update cache
       localStorage.setItem(`finance_cache_${tenantId}`, JSON.stringify({
           transactions: mappedTransactions,
           expenses: mappedExpenses
       }));
   }, [tenantId]);
 
-  // 2. Busca APENAS a Sessão do Usuário (Rodado na inicialização ou login)
   const fetchSessionData = useCallback(async () => {
       if (!tenantId) return;
 
-      // Load from cache first
       const cached = localStorage.getItem(`finance_session_cache_${tenantId}`);
       if (cached) {
           try {
@@ -113,15 +114,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (!navigator.onLine) return;
 
-      // CORREÇÃO DE LÓGICA:
-      // Busca QUALQUER sessão aberta para este restaurante.
-      // Removemos o filtro .eq('operator_name', ...) para evitar que o caixa feche 
-      // se o nome do usuário mudar ou se a sessão for recarregada.
       const { data: sessionData } = await supabase.from('cash_sessions')
           .select('*')
           .eq('tenant_id', tenantId)
           .eq('status', 'OPEN')
-          .order('opened_at', { ascending: false }) // Pega o mais recente aberto
+          .order('opened_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -141,39 +138,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           setState(prev => ({ ...prev, activeCashSession: activeSession, cashMovements: movements }));
 
-          // Update cache
           localStorage.setItem(`finance_session_cache_${tenantId}`, JSON.stringify({
               session: activeSession,
               movements: movements
           }));
       } else {
-          // Se não achar sessão aberta, garante que o estado reflita isso
           setState(prev => ({ ...prev, activeCashSession: null, cashMovements: [] }));
           localStorage.removeItem(`finance_session_cache_${tenantId}`);
       }
   }, [tenantId]);
 
-  // Efeito Inicial: Carrega tudo
   useEffect(() => {
       if (!tenantId) return;
       fetchFinancialData();
       fetchSessionData();
   }, [tenantId, fetchFinancialData, fetchSessionData]);
 
-  // Efeito Realtime: Segregado para evitar fechar o caixa acidentalmente
   useEffect(() => {
       if (!tenantId) return;
 
       const channel = supabase.channel(`finance_ctx:${tenantId}`)
-          // A. Transações e Despesas: Atualizam apenas as listas, SEM TOCAR NA SESSÃO
           .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `tenant_id=eq.${tenantId}` }, fetchFinancialData)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses', filter: `tenant_id=eq.${tenantId}` }, fetchFinancialData)
-          
-          // B. Movimentações: Atualizam apenas se houver sessão ativa
           .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_movements', filter: `tenant_id=eq.${tenantId}` }, async () => {
-               // Recarrega movimentos da sessão atual se existir
-               if (state.activeCashSession) {
-                   const { data: moveData } = await supabase.from('cash_movements').select('*').eq('session_id', state.activeCashSession.id);
+               // ✨ CORREÇÃO: Utiliza a ref em vez do estado diretamente
+               if (activeSessionRef.current) {
+                   const { data: moveData } = await supabase.from('cash_movements').select('*').eq('session_id', activeSessionRef.current.id);
                    if (moveData) {
                        const movements = moveData.map((m: any) => ({
                            id: m.id, sessionId: m.session_id, type: m.type, amount: m.amount, reason: m.reason, timestamp: new Date(m.created_at), userName: m.user_name
@@ -182,11 +172,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
                    }
                }
           })
-          
-          // C. Sessões: Lógica específica para abrir/fechar via evento
           .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_sessions', filter: `tenant_id=eq.${tenantId}` }, (payload: any) => {
-              // CORREÇÃO: Removemos a checagem de owner. Se alguém abrir/fechar o caixa, reflete para todos.
-              
               if (payload.eventType === 'INSERT') {
                   const newSession = payload.new;
                   if (newSession.status === 'OPEN') {
@@ -211,8 +197,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           })
           .subscribe();
 
+      // ✨ CORREÇÃO: state.activeCashSession removido das dependências para evitar loop de reconexão
       return () => { supabase.removeChannel(channel); };
-  }, [tenantId, fetchFinancialData, state.activeCashSession]);
+  }, [tenantId, fetchFinancialData]); 
 
   const openRegister = async (initialAmount: number, operatorName: string) => {
       if(!tenantId) throw new Error("Restaurante não identificado");
@@ -227,8 +214,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           console.error("Erro ao abrir caixa:", error);
           throw new Error(error.message);
       }
-      
-      // Realtime will handle the state update
   };
 
   const closeRegister = async (finalAmount: number) => {
@@ -243,8 +228,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           console.error("Erro ao fechar caixa:", error);
           throw new Error(error.message);
       }
-      
-      // Realtime will handle the state update
   };
 
   const bleedRegister = async (amount: number, reason: string, userName: string) => {
