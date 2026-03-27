@@ -8,7 +8,7 @@ import { PERMISSIONS_SCHEMA } from '@/constants';
 import { 
   ChefHat, Coffee, Truck, ArrowRight, LogOut, Grid, Briefcase, 
   Settings, DollarSign, Store, Package, Users, Clock, LifeBuoy, 
-  ShieldCheck, Sparkles, Star, Zap 
+  ShieldCheck, Sparkles, Star, Zap, Lock 
 } from 'lucide-react';
 import { Button } from '@/modules/common/components/Button';
 
@@ -23,6 +23,7 @@ interface ModuleCardProps {
   onClick: () => void;
   isNew?: boolean;
   isPopular?: boolean;
+  isInactive?: boolean;
 }
 
 const ModuleCard = ({ 
@@ -34,79 +35,70 @@ const ModuleCard = ({
   customIconUrl,
   onClick,
   isNew,
-  isPopular
+  isPopular,
+  isInactive
 }: ModuleCardProps) => (
   <div 
-    onClick={onClick}
+    onClick={() => {
+        if (isInactive) return; // Ignora o clique se estiver inativo
+        onClick();
+    }}
     className={`
-      group relative rounded-2xl p-6 cursor-pointer 
-      transition-all duration-500 ease-out
-      bg-white/95 backdrop-blur-sm
-      border border-white/20
-      hover:scale-[1.02] hover:shadow-2xl
-      hover:border-white/40
-      overflow-hidden
-      h-full flex flex-col
+      group relative rounded-2xl p-6 transition-all duration-500 ease-out overflow-hidden h-full flex flex-col
+      ${isInactive 
+        ? 'bg-slate-200/50 backdrop-blur-md border border-slate-300 cursor-not-allowed grayscale opacity-70' 
+        : 'bg-white/95 backdrop-blur-sm border border-white/20 hover:scale-[1.02] hover:shadow-2xl hover:border-white/40 cursor-pointer'}
     `}
   >
     {/* Background Gradient Animation */}
-    <div className={`
-      absolute inset-0 opacity-0 group-hover:opacity-100 
-      transition-opacity duration-700 ease-out
-      ${bgGradient}
-    `} />
+    {!isInactive && <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 ease-out ${bgGradient}`} />}
     
     {/* Glass Effect Overlay */}
-    <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-white/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+    {!isInactive && <div className="absolute inset-0 bg-gradient-to-br from-white/50 to-white/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />}
     
     {/* Content */}
     <div className="relative z-10">
       {/* Icon Container */}
       <div className={`
         relative w-14 h-14 rounded-2xl flex items-center justify-center mb-5
-        transition-all duration-500 group-hover:scale-110 group-hover:rotate-3
-        ${gradient}
-        shadow-lg group-hover:shadow-xl
+        ${isInactive 
+            ? 'bg-slate-400' 
+            : `${gradient} shadow-lg group-hover:shadow-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3`}
       `}>
         {customIconUrl ? (
-          <img src={customIconUrl} alt={title} className="w-7 h-7 object-contain brightness-0 invert" />
+          <img src={customIconUrl} alt={title} className={`w-7 h-7 object-contain ${isInactive ? 'opacity-50' : 'brightness-0 invert'}`} />
         ) : (
-          <Icon size={28} className="text-white" strokeWidth={1.5} />
+          <Icon size={28} className={isInactive ? 'text-slate-200' : 'text-white'} strokeWidth={1.5} />
         )}
         
         {/* Badges */}
-        {isNew && (
-          <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg animate-pulse">
-            NOVO
-          </div>
+        {isNew && !isInactive && (
+          <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg animate-pulse">NOVO</div>
         )}
-        {isPopular && !isNew && (
-          <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-            <Star size={12} className="inline mr-1" />
-            POPULAR
-          </div>
+        {isPopular && !isNew && !isInactive && (
+          <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg"><Star size={12} className="inline mr-1" />POPULAR</div>
         )}
       </div>
       
       {/* Title */}
-      <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-slate-900 transition-colors">
+      <h3 className={`text-xl font-bold mb-2 transition-colors ${isInactive ? 'text-slate-500' : 'text-slate-800 group-hover:text-slate-900'}`}>
         {title}
       </h3>
       
       {/* Description */}
-      <p className="text-slate-500 text-sm leading-relaxed mb-5 flex-1">
+      <p className={`text-sm leading-relaxed mb-5 flex-1 ${isInactive ? 'text-slate-500' : 'text-slate-500'}`}>
         {desc}
       </p>
       
       {/* CTA */}
       <div className={`
-        flex items-center gap-2 font-semibold text-sm
-        transition-all duration-300
-        ${gradient.replace('bg-gradient-to-r', 'text-transparent bg-clip-text bg-gradient-to-r')}
-        group-hover:gap-3
+        flex items-center gap-2 font-semibold text-sm transition-all duration-300
+        ${isInactive 
+            ? 'text-slate-500' 
+            : `${gradient.replace('bg-gradient-to-r', 'text-transparent bg-clip-text bg-gradient-to-r')} group-hover:gap-3`}
       `}>
-        <span>Acessar módulo</span>
-        <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
+        <span>{isInactive ? 'Bloqueado' : 'Acessar módulo'}</span>
+        {isInactive ? <Lock size={16} /> : <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />}
       </div>
     </div>
   </div>
@@ -120,6 +112,9 @@ export const ModuleSelector: React.FC = () => {
   const allowed = state.allowedModules || ['RESTAURANT', 'MANAGER', 'CONFIG', 'FINANCE', 'COMMERCE', 'INVENTORY', 'HR', 'AUDIT','TIMECLOCK','SUPPORT'];
   const tenantName = state.theme.restaurantName;
   const userName = authState.currentUser?.name?.split(' ')[0] || 'Usuário';
+  
+  // ✨ Checa se o estabelecimento está inativo (suspenso)
+  const isInactive = state.isInactiveTenant;
 
   const isModuleAllowed = (module: SystemModule) => {
     if (!allowed.includes(module)) return false;
@@ -137,6 +132,8 @@ export const ModuleSelector: React.FC = () => {
   };
 
   const handleSelect = (module: SystemModule) => {
+    if (isInactive) return;
+
     setActiveModule(module);
     
     const routes: Record<SystemModule, string> = {
@@ -158,12 +155,11 @@ export const ModuleSelector: React.FC = () => {
     navigate(routes[module] || '/');
   };
 
-  const handleTimeClock = () => navigate('/time-clock');
+  const handleTimeClock = () => { if (!isInactive) navigate('/time-clock'); };
   const handleSupport = () => navigate('/manual');
 
   const bgUrl = state.theme.moduleSelectorBgUrl || state.globalSettings.moduleSelectorBgUrl;
 
-  // Gradient definitions for cards
   const gradients = {
     RESTAURANT: 'bg-gradient-to-r from-blue-500 to-blue-600',
     SNACKBAR: 'bg-gradient-to-r from-orange-500 to-orange-600',
@@ -206,7 +202,6 @@ export const ModuleSelector: React.FC = () => {
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
       }}
     >
-      {/* Animated Background Orbs */}
       {!bgUrl && (
         <>
           <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-white/20 rounded-full blur-[150px] animate-pulse" />
@@ -215,7 +210,6 @@ export const ModuleSelector: React.FC = () => {
         </>
       )}
 
-      {/* Header - Fixed */}
       <header className="relative z-20 px-6 md:px-8 py-6 flex justify-between items-center backdrop-blur-md bg-white/10 border-b border-white/20 flex-shrink-0">
         <div className="flex items-center gap-4">
           <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-xl border border-white/30 shadow-lg">
@@ -252,18 +246,21 @@ export const ModuleSelector: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content - Scrollable */}
       <main className="flex-1 overflow-y-auto relative z-10">     
-        <div className="flex flex-col items-center justify-center py-2 md:py-2 px-2 md:px-2 min-h-full">
-          {/* Welcome Section */}
-          <div className="text-center mb-10 md:mb-12 max-w-3xl mx-auto">
-           
-        
-          </div>
+        <div className="flex flex-col items-center justify-center py-6 md:py-8 px-4 md:px-6 min-h-full">
+          
+          {/* ✨ Alerta de Bloqueio para Empresas Inativas */}
+          {isInactive && (
+            <div className="bg-red-500/90 backdrop-blur-md text-white px-6 py-4 rounded-xl mb-8 flex items-center gap-4 shadow-2xl border border-red-400 max-w-3xl w-full">
+                <Lock size={32} />
+                <div>
+                    <p className="font-bold text-lg">Sistema Suspenso</p>
+                    <p className="text-sm opacity-90">O acesso aos módulos operacionais do seu estabelecimento encontra-se bloqueado temporariamente. Por favor, contacte o suporte para regularizar a situação.</p>
+                </div>
+            </div>
+          )}
 
-          {/* Modules Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-6 max-w-7xl w-full mx-auto pb-8">
-            {/* Time Clock */}
             <ModuleCard 
               type="TIME_CLOCK"
               title="Bater Ponto"
@@ -273,9 +270,9 @@ export const ModuleSelector: React.FC = () => {
               bgGradient={bgGradients.TIME_CLOCK}
               onClick={handleTimeClock}
               customIconUrl={state.theme.moduleIcons?.['TIMECLOCK'] || state.globalSettings.moduleIcons?.['TIMECLOCK']}
+              isInactive={isInactive}
             />
             
-            {/* Dynamic Modules */}
             {isModuleAllowed('RESTAURANT') && (
               <ModuleCard 
                 type="RESTAURANT"
@@ -287,6 +284,7 @@ export const ModuleSelector: React.FC = () => {
                 onClick={() => handleSelect('RESTAURANT')}
                 customIconUrl={state.theme.moduleIcons?.['RESTAURANT'] || state.globalSettings.moduleIcons?.['RESTAURANT']}
                 isPopular
+                isInactive={isInactive}
               />
             )}
             
@@ -300,6 +298,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.SNACKBAR}
                 onClick={() => handleSelect('SNACKBAR')}
                 customIconUrl={state.theme.moduleIcons?.['SNACKBAR'] || state.globalSettings.moduleIcons?.['SNACKBAR']}
+                isInactive={isInactive}
               />
             )}
             
@@ -313,6 +312,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.COMMERCE}
                 onClick={() => handleSelect('COMMERCE')}
                 customIconUrl={state.theme.moduleIcons?.['COMMERCE'] || state.globalSettings.moduleIcons?.['COMMERCE']}
+                isInactive={isInactive}
               />
             )}
             
@@ -326,6 +326,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.DISTRIBUTOR}
                 onClick={() => handleSelect('DISTRIBUTOR')}
                 customIconUrl={state.theme.moduleIcons?.['DISTRIBUTOR'] || state.globalSettings.moduleIcons?.['DISTRIBUTOR']}
+                isInactive={isInactive}
               />
             )}
             
@@ -340,6 +341,7 @@ export const ModuleSelector: React.FC = () => {
                 onClick={() => handleSelect('MANAGER')}
                 customIconUrl={state.theme.moduleIcons?.['MANAGER'] || state.globalSettings.moduleIcons?.['MANAGER']}
                 isNew
+                isInactive={isInactive}
               />
             )}
             
@@ -353,6 +355,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.INVENTORY}
                 onClick={() => handleSelect('INVENTORY')}
                 customIconUrl={state.theme.moduleIcons?.['INVENTORY'] || state.globalSettings.moduleIcons?.['INVENTORY']}
+                isInactive={isInactive}
               />
             )}
             
@@ -366,6 +369,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.HR}
                 onClick={() => handleSelect('HR')}
                 customIconUrl={state.theme.moduleIcons?.['HR'] || state.globalSettings.moduleIcons?.['HR']}
+                isInactive={isInactive}
               />
             )}
             
@@ -379,6 +383,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.FINANCE}
                 onClick={() => handleSelect('FINANCE')}
                 customIconUrl={state.theme.moduleIcons?.['FINANCE'] || state.globalSettings.moduleIcons?.['FINANCE']}
+                isInactive={isInactive}
               />
             )}
             
@@ -392,6 +397,7 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.CONFIG}
                 onClick={() => handleSelect('CONFIG')}
                 customIconUrl={state.theme.moduleIcons?.['CONFIG'] || state.globalSettings.moduleIcons?.['CONFIG']}
+                isInactive={isInactive}
               />
             )}
             
@@ -405,10 +411,11 @@ export const ModuleSelector: React.FC = () => {
                 bgGradient={bgGradients.AUDIT}
                 onClick={() => handleSelect('AUDIT')}
                 customIconUrl={state.theme.moduleIcons?.['AUDIT'] || state.globalSettings.moduleIcons?.['AUDIT']}
+                isInactive={isInactive}
               />
             )}
 
-            {/* Support */}
+            {/* Support - Este módulo não fica inativo para permitir contato */}
             <ModuleCard 
               type="SUPPORT"
               title="Suporte & Ajuda"
@@ -421,7 +428,6 @@ export const ModuleSelector: React.FC = () => {
             />
           </div>
 
-          {/* Footer */}
           <div className="text-center py-6 mt-4">
             <p className="text-white/50 text-sm">
               © {new Date().getFullYear()} {tenantName} - Todos os direitos reservados

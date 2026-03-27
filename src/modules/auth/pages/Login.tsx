@@ -4,7 +4,7 @@ import { Role } from '@/types';
 import { useAuth } from '@/core/context/AuthProvider';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 // @ts-ignore
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 import { supabase } from '@/core/api/supabaseClient';
 import { Button } from '@/modules/common/components/Button';
@@ -12,7 +12,8 @@ import { getTenantSlug } from '@/core/tenant/tenantResolver';
 
 export const Login: React.FC = () => {
   const { state: authState, login } = useAuth();
-  const { state: restState } = useRestaurant();
+  // ✨ PUXAMOS O REFRESH AQUI
+  const { state: restState, refresh: refreshRestaurant } = useRestaurant(); 
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -134,9 +135,9 @@ export const Login: React.FC = () => {
                   throw new Error("Você não tem permissão para acessar este restaurante.");
               }
 
-              if (!currentSlug && actualSlug) {
-                  window.location.href = `/?restaurant=${actualSlug}`;
-                  return;
+              // ✨ GARANTIA DE MEMÓRIA: Guardar o slug *imediatamente* após o login
+              if (actualSlug) {
+                  sessionStorage.setItem('fluxeat_tenant_slug', actualSlug);
               }
 
               let allowedRoutes = staffData.allowed_routes || [];
@@ -165,6 +166,12 @@ export const Login: React.FC = () => {
                   allowedRoutes: allowedRoutes,
                   allowedFeatures: staffData.custom_roles?.permissions?.allowed_features || []
               });
+
+              // ✨ O SEGREDO ESTÁ AQUI: Avisamos o RestaurantContext que o utilizador entrou!
+              if (refreshRestaurant) {
+                  refreshRestaurant();
+              }
+              
               return;
           }
 

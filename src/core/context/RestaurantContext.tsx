@@ -90,6 +90,7 @@ interface ContextProps {
   state: RestaurantState
   authorize: (tenantId: string, tableId: string) => void
   setActiveModule: (module: SystemModule) => void
+  refresh: () => void 
 }
 
 const RestaurantContext = createContext<ContextProps | undefined>(undefined)
@@ -106,22 +107,15 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       let slug = getTenantSlug()
 
-      // ✨ MAGIA AQUI: Se não há slug, usa o utilizador logado para descobrir o restaurante
       if (!slug) {
          const { data: { session } } = await supabase.auth.getSession();
          if (session?.user?.id) {
-             const { data: staffData } = await supabase
-                .from('staff')
-                .select('tenants(slug)')
-                .eq('auth_user_id', session.user.id)
-                .maybeSingle();
-
+             const { data: staffData } = await supabase.from('staff').select('tenants(slug)').eq('auth_user_id', session.user.id).maybeSingle();
              const t = staffData?.tenants;
              const foundSlug = Array.isArray(t) ? t[0]?.slug : t?.slug;
-             
              if (foundSlug) {
                  slug = foundSlug;
-                 sessionStorage.setItem('fluxeat_tenant_slug', slug); // Restaura na memória
+                 sessionStorage.setItem('fluxeat_tenant_slug', slug); 
              }
          }
       }
@@ -142,11 +136,6 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return
       }
 
-      if (tenant.status === "INACTIVE") {
-        dispatch({ type: "TENANT_INACTIVE" })
-        return
-      }
-
       let globalSettings = {}
       const { data: config } = await supabase.from("saas_config").select("global_settings").eq("id", 1).maybeSingle()
       if (config?.global_settings) globalSettings = config.global_settings
@@ -157,13 +146,16 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (plan?.limits) planLimits = { ...defaultPlanLimits, ...plan.limits }
       }
 
-      const storedModule = localStorage.getItem(`arloflux_module_${tenant.id}`) as SystemModule | null
+      // ✨ SEGREDO DE SEGURANÇA: Se estiver inativo, apagamos o activeModule para impedir que ele force a entrada pela URL
+      const isInactive = tenant.status === "INACTIVE";
+      const storedModule = isInactive ? null : (localStorage.getItem(`arloflux_module_${tenant.id}`) as SystemModule | null);
       const storedTable = localStorage.getItem(`arloflux_auth_${tenant.id}`)
 
       dispatch({
         type: "INIT_DATA",
         payload: {
           tenantId: tenant.id, tenantSlug: tenant.slug,
+          isInactiveTenant: isInactive, // ✨ MANDAMOS A INFO DE BLOQUEIO PARA A TELA
           theme: tenant.theme_config || initialState.theme, businessInfo: tenant.business_info || initialState.businessInfo,
           allowedModules: tenant.allowed_modules || ["RESTAURANT"], allowedFeatures: tenant.allowed_features || [],
           globalSettings, planLimits, activeModule: storedModule,
@@ -175,6 +167,11 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       dispatch({ type: "SET_LOADING", value: false })
     }
   }, [])
+
+  const refresh = useCallback(() => {
+    dispatch({ type: "SET_LOADING", value: true });
+    init();
+  }, [init]);
 
   useEffect(() => {
     if (!state.tenantId) return
@@ -194,7 +191,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [])
 
   const setActiveModule = (module: SystemModule) => {
-    if (!state.tenantId) return
+    // ✨ SEGREDO DE SEGURANÇA 2: Impede que o front-end consiga selecionar módulos se estiver inativo
+    if (!state.tenantId || state.isInactiveTenant) return
     localStorage.setItem(`arloflux_module_${state.tenantId}`, module)
     dispatch({ type: "SET_ACTIVE_MODULE", module })
   }
@@ -202,7 +200,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => { init() }, [init])
 
   return (
-    <RestaurantContext.Provider value={{ state, authorize, setActiveModule }}>
+    <RestaurantContext.Provider value={{ state, authorize, setActiveModule, refresh }}>
       {state.isLoading ? (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
