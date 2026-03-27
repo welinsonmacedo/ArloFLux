@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useSaaS } from '@/core/context/SaaSContext';
 import { useUI } from '@/core/context/UIContext';
@@ -47,27 +46,31 @@ export const SuperAdminDashboard: React.FC = () => {
       setGlobalThemeForm(state.globalSettings);
     }
   }, [state.globalSettings]);
-  
-  // Plans Edit State
 
+  // Derived Metrics
+  const filteredTenants = state.tenants.filter(t => 
+      (t.name || '').toLowerCase().includes(filter.toLowerCase()) || 
+      (t.ownerName || '').toLowerCase().includes(filter.toLowerCase())
+  );
 
-
-  // Derived Metrics (Fixed MRR Calculation)
-  const filteredTenants = state.tenants.filter(t => t.name.toLowerCase().includes(filter.toLowerCase()) || t.ownerName.toLowerCase().includes(filter.toLowerCase()));
   const activeTenants = state.tenants.filter(t => t.status === 'ACTIVE').length;
   
+  // ✨ CORREÇÃO AQUI: Tratamento do MRR aceitando tanto texto legado quanto novos números
   const mrr = state.tenants.reduce((acc, t) => {
     if (t.status === 'INACTIVE') return acc;
     const plan = state.plans.find(p => p.key === t.plan);
     if (!plan) return acc;
     
-    // Remove tudo que não é número ou vírgula/ponto, substitui vírgula por ponto
-    const cleanPrice = plan.price.replace(/[^\d,.-]/g, '').replace(',','.');
-    const price = parseFloat(cleanPrice);
+    let price = 0;
+    if (typeof plan.price === 'string') {
+        const cleanPrice = plan.price.replace(/[^\d,.-]/g, '').replace(',','.');
+        price = parseFloat(cleanPrice);
+    } else if (typeof plan.price === 'number') {
+        price = plan.price;
+    }
     
     return acc + (isNaN(price) ? 0 : price);
   }, 0);
-
 
   const handleLogout = () => {
       showConfirm({
@@ -90,8 +93,6 @@ export const SuperAdminDashboard: React.FC = () => {
       showAlert({ title: "Sucesso", message: "Perfil atualizado com sucesso!", type: 'SUCCESS' });
   };
   
-  
-
   const selectedContractTenant = state.tenants.find(t => t.id === selectedContractTenantId);
   const selectedContractPlan = selectedContractTenant ? state.plans.find(p => p.key === selectedContractTenant.plan) : null;
 

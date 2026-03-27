@@ -118,7 +118,9 @@ const MODULES_CONFIG = [
         label: 'Suporte & Ajuda',
         icon: HelpCircle,
         features: [
-            { id: 'support_manuals', label: 'Manuais dos Módulos' }
+            { id: 'support_manuals', label: 'Manuais dos Módulos' },
+            // ✨ ADICIONADO: Nova permissão para ativar/desativar chamados no plano
+            { id: 'support_tickets', label: 'Chamados (Tickets)' }
         ]
     }
 ];
@@ -132,7 +134,7 @@ export const PlanManager: React.FC = () => {
         setEditingPlan({
             name: '',
             key: '',
-            price: 'R$ 0,00',
+            price: 0,
             period: 'Mensal',
             features: [],
             limits: {
@@ -185,7 +187,6 @@ export const PlanManager: React.FC = () => {
             return;
         }
 
-        // Sync legacy boolean flags with modules
         const newLimits = { 
             maxTables: 10,
             maxProducts: 50,
@@ -196,36 +197,32 @@ export const PlanManager: React.FC = () => {
             allowedModules: editingPlan.limits?.allowedModules || [],
             allowedFeatures: editingPlan.limits?.allowedFeatures || []
         } as PlanLimits;
+        
         const modules = newLimits.allowedModules || [];
         const features = newLimits.allowedFeatures || [];
         
-        // Table Management: Active for Restaurant
         newLimits.allowTableMgmt = modules.includes('RESTAURANT');
-        
-        // KDS: Active for Restaurant if the specific feature is selected
         newLimits.allowKds = modules.includes('RESTAURANT') && features.includes('rest_kds');
-        
-        // Expenses/Finance: Active for Finance module
         newLimits.allowExpenses = modules.includes('FINANCE');
-        
-        // Inventory/Purchases: Active for Inventory module
         newLimits.allowInventory = modules.includes('INVENTORY');
         newLimits.allowPurchases = modules.includes('INVENTORY');
-        
-        // HR: Active for HR module
         newLimits.allowHR = modules.includes('HR');
-        
-        // Cashier: Active for Commerce OR Restaurant
         newLimits.allowCashier = modules.includes('COMMERCE') || modules.includes('RESTAURANT');
-
-        // Reports: Active if any major module is active
         newLimits.allowReports = modules.includes('FINANCE') || modules.includes('COMMERCE') || modules.includes('RESTAURANT') || modules.includes('INVENTORY');
-
         newLimits.allowCustomization = true; 
         newLimits.allowStaff = true;
 
+        let cleanPrice = 0;
+        if (typeof editingPlan.price === 'string') {
+             let parsedString = editingPlan.price.replace(/[R$\s]/g, '').replace(',', '.');
+             cleanPrice = parseFloat(parsedString) || 0;
+        } else if (typeof editingPlan.price === 'number') {
+             cleanPrice = editingPlan.price;
+        }
+
         const planToSave = {
             ...editingPlan,
+            price: cleanPrice, 
             limits: newLimits
         } as Plan;
 
@@ -304,7 +301,10 @@ export const PlanManager: React.FC = () => {
                             </div>
                         </div>
                         
-                        <p className="text-3xl font-black text-slate-800 mb-6">{plan.price} <span className="text-sm font-normal text-gray-500">/{plan.period}</span></p>
+                        <p className="text-3xl font-black text-slate-800 mb-6">
+                            R$ {Number(plan.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} 
+                            <span className="text-sm font-normal text-gray-500">/{plan.period}</span>
+                        </p>
 
                         <div className="space-y-4 flex-1">
                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -345,7 +345,6 @@ export const PlanManager: React.FC = () => {
                 onSave={handleSave}
             >
                 <div className="max-w-5xl mx-auto space-y-8 pb-20">
-                    {/* Basic Info */}
                     <section className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
                         <h3 className="font-bold text-lg text-gray-800 border-b pb-2">Informações Básicas</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -368,18 +367,17 @@ export const PlanManager: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Preço (Texto)</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Preço Numérico (Ex: 99.90)</label>
                                 <input 
                                     className="w-full border p-2 rounded-lg" 
-                                    value={editingPlan.price || ''} 
+                                    value={editingPlan.price !== undefined ? editingPlan.price : ''} 
                                     onChange={e => setEditingPlan({...editingPlan, price: e.target.value})}
-                                    placeholder="Ex: R$ 99,90"
+                                    placeholder="Ex: 99.90"
                                 />
                             </div>
                         </div>
                     </section>
 
-                    {/* Limits */}
                     <section className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
                         <h3 className="font-bold text-lg text-gray-800 border-b pb-2">Limites Operacionais</h3>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -460,7 +458,6 @@ export const PlanManager: React.FC = () => {
                         </div>
                     </section>
 
-                    {/* Modules & Features */}
                     <section className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
                         <h3 className="font-bold text-lg text-gray-800 border-b pb-2">Módulos e Permissões</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -198,7 +198,10 @@ export const ManualPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { state } = useRestaurant();
+  
   const allowed = state.allowedModules || [];
+  // ✨ PEGAR FEATURES DO PLANO:
+  const allowedFeatures = state.allowedFeatures || []; 
 
   const showRestaurant = allowed.includes('RESTAURANT') || allowed.includes('SNACKBAR');
   const showCommerce = allowed.includes('COMMERCE') || allowed.includes('DISTRIBUTOR');
@@ -206,8 +209,10 @@ export const ManualPage: React.FC = () => {
   const showFinance = allowed.includes('FINANCE');
   const showAdmin = allowed.includes('MANAGER') || allowed.includes('CONFIG');
   const showClient = showRestaurant || showCommerce;
+  
+  // ✨ VERIFICADOR SE TICKETS ESTÃO LIBERADOS NO PLANO
+  const showTickets = allowedFeatures.includes('support_tickets');
 
-  // Set initial active tab based on what's available
   useEffect(() => {
     if (showRestaurant) setActiveTab('WAITER');
     else if (showInventory) setActiveTab('INVENTORY');
@@ -217,7 +222,6 @@ export const ManualPage: React.FC = () => {
     else setActiveTab('SUPPORT');
   }, [showRestaurant, showInventory, showFinance, showAdmin, showClient]);
 
-  // Filter FAQ items based on search
   const faqItems = [
     { question: "O sistema funciona sem internet?", answer: "O ArloFlux é um sistema em nuvem e requer conexão com a internet para sincronizar pedidos entre Garçom, Cozinha e Caixa. Se a internet cair, você não conseguirá lançar novos pedidos até que ela retorne.", category: "Técnico" },
     { question: "Como reimprimir um QR Code de mesa?", answer: "Vá em Admin > Mesas. Encontre a mesa desejada e clique no ícone de QR Code. Você pode imprimir apenas aquele ou gerar um PDF com todas as mesas.", category: "Configuração" },
@@ -397,15 +401,18 @@ export const ManualPage: React.FC = () => {
                   onClick={() => setActiveTab('SUPPORT')}
                   description="Perguntas frequentes"
                 />
-                <RoleCard 
-                  icon={<MessageCircle size={18} />} 
-                  title={sidebarCollapsed ? "" : "Chamados"} 
-                  color="indigo" 
-                  active={activeTab === 'TICKETS'} 
-                  onClick={() => setActiveTab('TICKETS')}
-                  description="Abrir ticket de suporte"
-                  badge={3}
-                />
+                
+                {/* ✨ EXIBE APENAS SE ESTIVER NO PLANO */}
+                {showTickets && (
+                  <RoleCard 
+                    icon={<MessageCircle size={18} />} 
+                    title={sidebarCollapsed ? "" : "Chamados"} 
+                    color="indigo" 
+                    active={activeTab === 'TICKETS'} 
+                    onClick={() => setActiveTab('TICKETS')}
+                    description="Abrir ticket de suporte"
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -888,7 +895,7 @@ export const ManualPage: React.FC = () => {
           )}
 
           {/* --- TICKETS SECTION --- */}
-          {activeTab === 'TICKETS' && (
+          {activeTab === 'TICKETS' && showTickets && (
             <TicketsClient />
           )}
         </div>

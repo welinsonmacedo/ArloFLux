@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { useAuth } from '@/core/context/AuthProvider';
@@ -36,15 +35,24 @@ export const AuditDashboard: React.FC = () => {
     const [dateFilter, setDateFilter] = useState('');
     const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
 
-    const modules = [
-        { id: 'ALL', label: 'Todos', icon: Activity },
-        { id: 'INVENTORY', label: 'Estoque', icon: Package },
-        { id: 'FINANCE', label: 'Financeiro', icon: DollarSign },
-        { id: 'HR', label: 'RH', icon: Users },
-        { id: 'RESTAURANT', label: 'Restaurante', icon: ChefHat },
-        { id: 'COMMERCE', label: 'Varejo', icon: Store },
-        { id: 'CONFIG', label: 'Configurações', icon: Settings },
-    ];
+    // ✨ Filtro inteligente: Só mostra a aba se o módulo estiver no plano (ou se for a aba "Todos")
+    const activeModuleTabs = useMemo(() => {
+        const allModules = [
+            { id: 'ALL', label: 'Todos', icon: Activity },
+            { id: 'INVENTORY', label: 'Estoque', icon: Package },
+            { id: 'FINANCE', label: 'Financeiro', icon: DollarSign },
+            { id: 'HR', label: 'RH', icon: Users },
+            { id: 'RESTAURANT', label: 'Restaurante', icon: ChefHat },
+            { id: 'COMMERCE', label: 'Varejo', icon: Store },
+            { id: 'CONFIG', label: 'Configurações', icon: Settings },
+        ];
+
+        const allowed = restState.allowedModules || [];
+
+        return allModules.filter(mod => 
+            mod.id === 'ALL' || allowed.includes(mod.id as any)
+        );
+    }, [restState.allowedModules]);
 
     useEffect(() => {
         fetchLogs();
@@ -134,7 +142,8 @@ export const AuditDashboard: React.FC = () => {
                     {/* Controls */}
                     <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200 print:hidden">
                         <div className="flex flex-wrap gap-2">
-                            {modules.map(mod => (
+                            {/* Renderizando apenas as abas ativas do plano */}
+                            {activeModuleTabs.map(mod => (
                                 <button
                                     key={mod.id}
                                     onClick={() => setActiveTab(mod.id)}
