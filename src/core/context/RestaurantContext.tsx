@@ -1,24 +1,7 @@
-import React, {
-  createContext,
-  useContext,
-  useReducer,
-  useEffect,
-  useCallback,
-} from "react"
-
-import {
-  RestaurantTheme,
-  PlanLimits,
-  RestaurantBusinessInfo,
-  SystemModule,
-} from "@/types"
-
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from "react"
+import { RestaurantTheme, PlanLimits, RestaurantBusinessInfo, SystemModule } from "@/types"
 import { getTenantSlug } from "@/core/tenant/tenantResolver"
 import { supabase } from "@/core/api/supabaseClient"
-
-/* -------------------------------------------------------------------------- */
-/*                                   TYPES                                    */
-/* -------------------------------------------------------------------------- */
 
 interface RestaurantState {
   isLoading: boolean
@@ -28,13 +11,10 @@ interface RestaurantState {
   isInactiveTenant: boolean
   isAuthorized: boolean
   tableId: string | null
-
   planLimits: PlanLimits
   allowedModules: SystemModule[]
   allowedFeatures: string[]
-
   activeModule: SystemModule | null
-
   theme: RestaurantTheme
   globalSettings: any
   businessInfo: RestaurantBusinessInfo
@@ -53,62 +33,24 @@ type Action =
   | { type: "UPDATE_PLAN_LIMITS"; limits: PlanLimits }
   | { type: "SYNC_REALTIME_DATA"; payload: any }
 
-/* -------------------------------------------------------------------------- */
-/*                               INITIAL STATE                                */
-/* -------------------------------------------------------------------------- */
-
 const defaultPlanLimits: PlanLimits = {
-  maxTables: -1,
-  maxProducts: -1,
-  maxStaff: -1,
-
-  allowKds: true,
-  allowCashier: true,
-  allowReports: true,
-  allowInventory: true,
-  allowPurchases: true,
-  allowExpenses: true,
-  allowStaff: true,
-  allowTableMgmt: true,
-  allowCustomization: true,
-  allowHR: true,
-  allowProductImages: true,
-  allowProductExtras: true,
-  allowProductDescription: true,
-  allowRawMaterials: true,
+  maxTables: -1, maxProducts: -1, maxStaff: -1,
+  allowKds: true, allowCashier: true, allowReports: true, allowInventory: true,
+  allowPurchases: true, allowExpenses: true, allowStaff: true, allowTableMgmt: true,
+  allowCustomization: true, allowHR: true, allowProductImages: true,
+  allowProductExtras: true, allowProductDescription: true, allowRawMaterials: true,
   allowCompositeProducts: true,
 }
 
 const initialState: RestaurantState = {
-  isLoading: true,
-  tenantSlug: null,
-  tenantId: null,
-
-  isValidTenant: false,
-  isInactiveTenant: false,
-
-  isAuthorized: false,
-  tableId: null,
-
-  planLimits: defaultPlanLimits,
-  allowedModules: ["RESTAURANT"],
-  allowedFeatures: [],
-
-  activeModule: null,
-
+  isLoading: true, tenantSlug: null, tenantId: null, isValidTenant: false, isInactiveTenant: false,
+  isAuthorized: false, tableId: null, planLimits: defaultPlanLimits,
+  allowedModules: ["RESTAURANT"], allowedFeatures: [], activeModule: null,
   theme: {
-    primaryColor: "#22c55e",
-    backgroundColor: "#fff",
-    fontColor: "#000",
-    logoUrl: "",
-    restaurantName: "Carregando...",
-    fontFamily: "Inter",
-    borderRadius: "lg",
-    buttonStyle: "fill",
+    primaryColor: "#22c55e", backgroundColor: "#fff", fontColor: "#000", logoUrl: "",
+    restaurantName: "Carregando...", fontFamily: "Inter", borderRadius: "lg", buttonStyle: "fill",
   },
-
   globalSettings: {},
-
   businessInfo: {
     paymentMethods: [
       { id: "1", name: "Dinheiro", type: "CASH", feePercentage: 0, isActive: true },
@@ -117,81 +59,32 @@ const initialState: RestaurantState = {
       { id: "4", name: "Cartão Débito", type: "DEBIT", feePercentage: 1.99, isActive: true },
     ],
     expenseCategories: [
-      { id: "1", name: "Fornecedor" },
-      { id: "2", name: "Pessoal" },
-      { id: "3", name: "Aluguel" },
-      { id: "4", name: "Impostos" },
-      { id: "5", name: "Manutenção" },
-      { id: "6", name: "Outros" },
+      { id: "1", name: "Fornecedor" }, { id: "2", name: "Pessoal" }, { id: "3", name: "Aluguel" },
+      { id: "4", name: "Impostos" }, { id: "5", name: "Manutenção" }, { id: "6", name: "Outros" },
     ],
   },
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                   REDUCER                                  */
-/* -------------------------------------------------------------------------- */
-
-function restaurantReducer(
-  state: RestaurantState,
-  action: Action
-): RestaurantState {
+function restaurantReducer(state: RestaurantState, action: Action): RestaurantState {
   switch (action.type) {
-    case "SET_LOADING":
-      return { ...state, isLoading: action.value }
-
-    case "TENANT_NOT_FOUND":
-      return { ...state, isLoading: false, isValidTenant: false }
-
-    case "TENANT_INACTIVE":
-      return { ...state, isLoading: false, isInactiveTenant: true }
-
-    case "SET_AUTHORIZED":
-      return {
-        ...state,
-        isAuthorized: true,
-        tenantId: action.tenantId,
-        tableId: action.tableId,
-      }
-
-    case "SET_ACTIVE_MODULE":
-      return { ...state, activeModule: action.module }
-
-    case "UPDATE_THEME":
-      return { ...state, theme: action.theme }
-
-    case "UPDATE_BUSINESS_INFO":
-      return { ...state, businessInfo: action.info }
-
-    case "UPDATE_GLOBAL_SETTINGS":
-      return { ...state, globalSettings: action.settings }
-
-    case "UPDATE_PLAN_LIMITS":
-      return { ...state, planLimits: action.limits }
-
-    case "SYNC_REALTIME_DATA":
-      return {
-        ...state,
-        theme: action.payload.theme_config || state.theme,
+    case "SET_LOADING": return { ...state, isLoading: action.value }
+    case "TENANT_NOT_FOUND": return { ...state, isLoading: false, isValidTenant: false }
+    case "TENANT_INACTIVE": return { ...state, isLoading: false, isInactiveTenant: true }
+    case "SET_AUTHORIZED": return { ...state, isAuthorized: true, tenantId: action.tenantId, tableId: action.tableId }
+    case "SET_ACTIVE_MODULE": return { ...state, activeModule: action.module }
+    case "UPDATE_THEME": return { ...state, theme: action.theme }
+    case "UPDATE_BUSINESS_INFO": return { ...state, businessInfo: action.info }
+    case "UPDATE_GLOBAL_SETTINGS": return { ...state, globalSettings: action.settings }
+    case "UPDATE_PLAN_LIMITS": return { ...state, planLimits: action.limits }
+    case "SYNC_REALTIME_DATA": return {
+        ...state, theme: action.payload.theme_config || state.theme,
         allowedModules: action.payload.allowed_modules || state.allowedModules,
         allowedFeatures: action.payload.allowed_features || state.allowedFeatures,
       }
-
-    case "INIT_DATA":
-      return {
-        ...state,
-        ...action.payload,
-        isLoading: false,
-        isValidTenant: true,
-      }
-
-    default:
-      return state
+    case "INIT_DATA": return { ...state, ...action.payload, isLoading: false, isValidTenant: true }
+    default: return state
   }
 }
-
-/* -------------------------------------------------------------------------- */
-/*                                   CONTEXT                                  */
-/* -------------------------------------------------------------------------- */
 
 interface ContextProps {
   state: RestaurantState
@@ -201,36 +94,37 @@ interface ContextProps {
 
 const RestaurantContext = createContext<ContextProps | undefined>(undefined)
 
-/* -------------------------------------------------------------------------- */
-/*                                  PROVIDER                                  */
-/* -------------------------------------------------------------------------- */
-
-export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
+export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(restaurantReducer, initialState)
-
-  /* -------------------------------------------------------------------------- */
-  /*                                 AUTHORIZE                                  */
-  /* -------------------------------------------------------------------------- */
 
   const authorize = (tenantId: string, tableId: string) => {
     localStorage.setItem(`arloflux_auth_${tenantId}`, tableId)
-
-    dispatch({
-      type: "SET_AUTHORIZED",
-      tenantId,
-      tableId,
-    })
+    dispatch({ type: "SET_AUTHORIZED", tenantId, tableId })
   }
-
-  /* -------------------------------------------------------------------------- */
-  /*                                   INIT                                     */
-  /* -------------------------------------------------------------------------- */
 
   const init = useCallback(async () => {
     try {
-      const slug = getTenantSlug()
+      let slug = getTenantSlug()
+
+      // ✨ MAGIA AQUI: Se não há slug, usa o utilizador logado para descobrir o restaurante
+      if (!slug) {
+         const { data: { session } } = await supabase.auth.getSession();
+         if (session?.user?.id) {
+             const { data: staffData } = await supabase
+                .from('staff')
+                .select('tenants(slug)')
+                .eq('auth_user_id', session.user.id)
+                .maybeSingle();
+
+             const t = staffData?.tenants;
+             const foundSlug = Array.isArray(t) ? t[0]?.slug : t?.slug;
+             
+             if (foundSlug) {
+                 slug = foundSlug;
+                 sessionStorage.setItem('fluxeat_tenant_slug', slug); // Restaura na memória
+             }
+         }
+      }
 
       if (!slug) {
         dispatch({ type: "SET_LOADING", value: false })
@@ -239,18 +133,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const { data: tenant, error } = await supabase
         .from("tenants")
-        .select(
-          `
-          id,
-          slug,
-          status,
-          theme_config,
-          business_info,
-          plan,
-          allowed_modules,
-          allowed_features
-        `
-        )
+        .select(`id, slug, status, theme_config, business_info, plan, allowed_modules, allowed_features`)
         .eq("slug", slug.toLowerCase())
         .maybeSingle()
 
@@ -264,64 +147,27 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({
         return
       }
 
-      /* ---------------------------------------------------------------------- */
-      /*                              GLOBAL SETTINGS                           */
-      /* ---------------------------------------------------------------------- */
-
       let globalSettings = {}
-
-      const { data: config } = await supabase
-        .from("saas_config")
-        .select("global_settings")
-        .eq("id", 1)
-        .maybeSingle()
-
-      if (config?.global_settings) {
-        globalSettings = config.global_settings
-      }
-
-      /* ---------------------------------------------------------------------- */
-      /*                               PLAN LIMITS                              */
-      /* ---------------------------------------------------------------------- */
+      const { data: config } = await supabase.from("saas_config").select("global_settings").eq("id", 1).maybeSingle()
+      if (config?.global_settings) globalSettings = config.global_settings
 
       let planLimits = defaultPlanLimits
-
       if (tenant.plan) {
-        const { data: plan } = await supabase
-          .from("plans")
-          .select("limits")
-          .eq("key", tenant.plan)
-          .maybeSingle()
-
-        if (plan?.limits) {
-          planLimits = { ...defaultPlanLimits, ...plan.limits }
-        }
+        const { data: plan } = await supabase.from("plans").select("limits").eq("key", tenant.plan).maybeSingle()
+        if (plan?.limits) planLimits = { ...defaultPlanLimits, ...plan.limits }
       }
 
-      const storedModule = localStorage.getItem(
-        `arloflux_module_${tenant.id}`
-      ) as SystemModule | null
-
+      const storedModule = localStorage.getItem(`arloflux_module_${tenant.id}`) as SystemModule | null
       const storedTable = localStorage.getItem(`arloflux_auth_${tenant.id}`)
 
       dispatch({
         type: "INIT_DATA",
         payload: {
-          tenantId: tenant.id,
-          tenantSlug: tenant.slug,
-
-          theme: tenant.theme_config || initialState.theme,
-          businessInfo: tenant.business_info || initialState.businessInfo,
-
-          allowedModules: tenant.allowed_modules || ["RESTAURANT"],
-          allowedFeatures: tenant.allowed_features || [],
-
-          globalSettings,
-          planLimits,
-
-          activeModule: storedModule,
-          isAuthorized: !!storedTable,
-          tableId: storedTable,
+          tenantId: tenant.id, tenantSlug: tenant.slug,
+          theme: tenant.theme_config || initialState.theme, businessInfo: tenant.business_info || initialState.businessInfo,
+          allowedModules: tenant.allowed_modules || ["RESTAURANT"], allowedFeatures: tenant.allowed_features || [],
+          globalSettings, planLimits, activeModule: storedModule,
+          isAuthorized: !!storedTable, tableId: storedTable,
         },
       })
     } catch (error) {
@@ -330,121 +176,44 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [])
 
-  /* -------------------------------------------------------------------------- */
-  /*                                 REALTIME                                   */
-  /* -------------------------------------------------------------------------- */
-
   useEffect(() => {
     if (!state.tenantId) return
-
-    const channel = supabase
-      .channel(`tenant:${state.tenantId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "tenants",
-          filter: `id=eq.${state.tenantId}`,
-        },
-        (payload) => {
-          dispatch({
-            type: "SYNC_REALTIME_DATA",
-            payload: payload.new,
-          })
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    const channel = supabase.channel(`tenant:${state.tenantId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tenants", filter: `id=eq.${state.tenantId}` },
+        (payload) => { dispatch({ type: "SYNC_REALTIME_DATA", payload: payload.new }) }
+      ).subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [state.tenantId])
 
-  /* -------------------------------------------------------------------------- */
-  /*                                GLOBAL CONFIG                               */
-  /* -------------------------------------------------------------------------- */
-
   useEffect(() => {
-    const channel = supabase
-      .channel("saas_config")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "saas_config",
-          filter: "id=eq.1",
-        },
-        (payload) => {
-          if (payload.new?.global_settings) {
-            dispatch({
-              type: "UPDATE_GLOBAL_SETTINGS",
-              settings: payload.new.global_settings,
-            })
-          }
-        }
-      )
-      .subscribe()
-
+    const channel = supabase.channel("saas_config")
+      .on("postgres_changes", { event: "*", schema: "public", table: "saas_config", filter: "id=eq.1" },
+        (payload) => { if (payload.new?.global_settings) { dispatch({ type: "UPDATE_GLOBAL_SETTINGS", settings: payload.new.global_settings }) } }
+      ).subscribe()
     return () => supabase.removeChannel(channel)
   }, [])
 
-  /* -------------------------------------------------------------------------- */
-  /*                             ACTIVE MODULE                                  */
-  /* -------------------------------------------------------------------------- */
-
   const setActiveModule = (module: SystemModule) => {
     if (!state.tenantId) return
-
     localStorage.setItem(`arloflux_module_${state.tenantId}`, module)
-
-    dispatch({
-      type: "SET_ACTIVE_MODULE",
-      module,
-    })
+    dispatch({ type: "SET_ACTIVE_MODULE", module })
   }
 
-  /* -------------------------------------------------------------------------- */
-  /*                                   EFFECT                                   */
-  /* -------------------------------------------------------------------------- */
-
-  useEffect(() => {
-    init()
-  }, [init])
-
-  /* -------------------------------------------------------------------------- */
-  /*                                   RETURN                                   */
-  /* -------------------------------------------------------------------------- */
+  useEffect(() => { init() }, [init])
 
   return (
-    <RestaurantContext.Provider
-      value={{
-        state,
-        authorize,
-        setActiveModule,
-      }}
-    >
+    <RestaurantContext.Provider value={{ state, authorize, setActiveModule }}>
       {state.isLoading ? (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : (
-        children
-      )}
+      ) : children}
     </RestaurantContext.Provider>
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                   HOOK                                     */
-/* -------------------------------------------------------------------------- */
-
 export const useRestaurant = () => {
   const context = useContext(RestaurantContext)
-
-  if (!context)
-    throw new Error("useRestaurant must be used within RestaurantProvider")
-
+  if (!context) throw new Error("useRestaurant must be used within RestaurantProvider")
   return context
 }

@@ -17,9 +17,9 @@ export const supabase: any = createClient(
 );
 
 export const logAudit = async (
-  tenantId: string, 
-  userId: string, 
-  userName: string, 
+  tenantId: string | null | undefined, 
+  userId: string | null | undefined, 
+  userName: string | null | undefined, 
   module: string, 
   action: string, 
   details: any = {}
@@ -35,15 +35,33 @@ export const logAudit = async (
       }
     };
 
-    await supabase.from('audit_logs').insert({
-      tenant_id: tenantId,
-      user_id: userId,
-      user_name: userName,
+    // Garantir que UUIDs vazios sejam passados como nulos e não como strings vazias ('')
+    const safeTenantId = tenantId && tenantId.trim() !== '' ? tenantId : null;
+    let safeUserId = userId && typeof userId === 'string' && userId.trim() !== '' ? userId : null;
+    
+    // Tratativa caso o userId venha como Array (como vimos acontecer noutros ficheiros)
+    if (Array.isArray(userId)) {
+        safeUserId = userId[0] || null;
+    }
+
+    // A MUDANÇA PRINCIPAL: Capturar o `error` da requisição
+    const { error } = await supabase.from('audit_logs').insert({
+      tenant_id: safeTenantId,
+      user_id: safeUserId,
+      user_name: userName || 'Sistema',
       module,
       action,
       details: structuredDetails
     });
+
+    // Se houver erro de banco de dados (RLS, FK, tipos), o Supabase coloca aqui
+    if (error) {
+      logger.error("Falha do Supabase ao gravar log de auditoria:", error);
+      console.error("[AUDIT ERROR]", error); // Adicionado para forçar a visualização no console do navegador
+    }
+
   } catch (error) {
-    logger.error("Erro ao registrar log de auditoria:", error);
+    // Aqui só cai se houver falha de rede/conexão ou quebra de código JS
+    logger.error("Erro interno ao tentar registrar log de auditoria:", error);
   }
 };

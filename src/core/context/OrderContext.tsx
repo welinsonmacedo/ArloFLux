@@ -82,7 +82,7 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       tables: [], orders: [], serviceCalls: [], audioUnlocked: false, isLoading: true
   });
 
-  useEffect(() => {
+ useEffect(() => {
       if (typeof window !== 'undefined' && tenantId) {
           const cached = localStorage.getItem(`order_cache_${tenantId}`);
           if (cached) {
@@ -93,7 +93,8 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                       state: {
                           tables: parsed.tables || [],
                           orders: (parsed.orders || []).map((o: any) => ({ ...o, timestamp: new Date(o.timestamp) })),
-                          serviceCalls: parsed.serviceCalls || []
+                          // ✅ CORREÇÃO: Converter a string do cache de volta para Data
+                          serviceCalls: (parsed.serviceCalls || []).map((c: any) => ({ ...c, timestamp: new Date(c.timestamp) }))
                       }
                   });
               } catch (e) { console.error("Erro ao carregar cache de pedidos:", e); }

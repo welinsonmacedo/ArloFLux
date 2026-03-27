@@ -30,21 +30,9 @@ export const resolveTenantFromUrl = (): string | null => {
 
   const parts = host.split('.');
 
-  /**
-   * Casos possíveis:
-   * 
-   * localhost
-   * restaurant.localhost
-   * restaurant-udi.vercel.app
-   * restaurant.app.com
-   */
-
   if (host === 'localhost' || host === '127.0.0.1') {
-    return null;
-  }
-
-  // Ex: restaurant-udi.vercel.app
-  if (parts.length >= 3) {
+    // Para testes locais, não bloqueia a busca no session storage
+  } else if (parts.length >= 3) {
     const subdomain = parts[0];
 
     if (subdomain !== 'www' && subdomain !== 'api') {
@@ -53,14 +41,7 @@ export const resolveTenantFromUrl = (): string | null => {
     }
   }
 
-  // 4️⃣ fallback
-  const saasRoutes = ['/sys-admin', '/dashboard', '/register'];
-
-  if (path === '/' || saasRoutes.some(route => path.startsWith(route))) {
-    sessionStorage.removeItem('fluxeat_tenant_slug');
-    return null;
-  }
-
+  // 4️⃣ Fallback: Buscar da memória (SEM APAGAR A MEMÓRIA!)
   const storedSlug = sessionStorage.getItem('fluxeat_tenant_slug');
 
   if (storedSlug && storedSlug !== 'null' && storedSlug !== 'undefined') {

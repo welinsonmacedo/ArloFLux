@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { GlobalLoading } from '@/modules/common/components/GlobalLoading';
 import { Role } from '@/types';
-import { useAuth } from '@/core/context/AuthProvider'; // Use AuthProvider
+import { useAuth } from '@/core/context/AuthProvider';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 // @ts-ignore
 import { useNavigate, useLocation, Link } from 'react-router-dom';
@@ -12,8 +11,8 @@ import { Button } from '@/modules/common/components/Button';
 import { getTenantSlug } from '@/core/tenant/tenantResolver';
 
 export const Login: React.FC = () => {
-  const { state: authState, login } = useAuth(); // Auth
-  const { state: restState } = useRestaurant(); // Theme only
+  const { state: authState, login } = useAuth();
+  const { state: restState } = useRestaurant();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -25,22 +24,21 @@ export const Login: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
- useEffect(() => {
-  if (!authState.currentUser) return;
+  useEffect(() => {
+    if (!authState.currentUser) return;
 
-  let target = "/modules";
+    let target = "/modules";
 
-  if (authState.currentUser.role === Role.CLIENT) {
-    target = "/client/home";
-  } else if (authState.currentUser.role === Role.SUPER_ADMIN) {
-    target = "/dashboard";
-  }
+    if (authState.currentUser.role === Role.CLIENT) {
+      target = "/client/home";
+    } else if (authState.currentUser.role === Role.SUPER_ADMIN) {
+      target = "/dashboard";
+    }
 
-  if (window.location.pathname !== target) {
-    navigate(target, { replace: true });
-  }
-
-}, [authState.currentUser, navigate]);
+    if (window.location.pathname !== target) {
+      navigate(target, { replace: true });
+    }
+  }, [authState.currentUser, navigate]);
 
   useEffect(() => {
       const params = new URLSearchParams(location.search);
@@ -78,7 +76,6 @@ export const Login: React.FC = () => {
           const userId = data.user.id;
           const userEmail = data.user.email;
 
-          // 1. Tenta identificar o tenant se não houver slug na URL
           let tenantId = '';
 
           if (currentSlug) {
@@ -86,14 +83,12 @@ export const Login: React.FC = () => {
               if (tenantRef) tenantId = tenantRef.id;
           }
 
-          // 2. Busca staff e tenant se não tiver tenantId ou se quiser garantir o vínculo
           let { data: staffData } = await supabase
             .from('staff')
             .select('*, tenants(id, slug, name), custom_roles(permissions)')
             .eq('auth_user_id', userId)
             .maybeSingle();
           
-          // Se não encontrou pelo auth_user_id, tenta pelo email no tenant atual (se houver)
           if (!staffData && userEmail && tenantId) {
                const { data: staffByEmail } = await supabase
                 .from('staff')
@@ -114,7 +109,6 @@ export const Login: React.FC = () => {
                }
           }
 
-          // 3. Se ainda não encontrou staff, pode ser um Owner Legado (direto na tabela tenants)
           if (!staffData) {
               const { data: tenantData } = await supabase
                   .from('tenants')
@@ -124,7 +118,6 @@ export const Login: React.FC = () => {
                   .maybeSingle();
               
               if (tenantData) {
-                  // Se for owner, redireciona para o restaurante dele
                   window.location.href = `/?restaurant=${tenantData.slug}`;
                   return;
               }
@@ -137,7 +130,6 @@ export const Login: React.FC = () => {
               // @ts-ignore
               const actualTenantId = Array.isArray(t) ? t[0]?.id : t?.id;
 
-              // Se o slug da URL for diferente do slug do staff, redireciona
               if (currentSlug && actualSlug && currentSlug !== actualSlug) {
                   throw new Error("Você não tem permissão para acessar este restaurante.");
               }
@@ -154,7 +146,7 @@ export const Login: React.FC = () => {
                       allowedRoutes = staffData.custom_roles.permissions.allowed_modules;
                   }
               } else if (staffData.role === 'ADMIN') {
-                  allowedRoutes = ['RESTAURANT', 'SNACKBAR', 'DISTRIBUTOR', 'COMMERCE', 'MANAGER', 'CONFIG', 'FINANCE', 'INVENTORY', 'HR'];
+                  allowedRoutes = ['RESTAURANT', 'SNACKBAR', 'DISTRIBUTOR', 'COMMERCE', 'MANAGER', 'CONFIG', 'FINANCE', 'INVENTORY', 'HR', 'AUDIT', 'TIMECLOCK', 'SUPPORT'];
               } else if (!staffData.custom_role_id && allowedRoutes.length === 0) {
                   if (['WAITER', 'KITCHEN', 'CASHIER'].includes(staffData.role)) {
                       allowedRoutes = ['RESTAURANT'];
@@ -216,10 +208,8 @@ export const Login: React.FC = () => {
             {isRegistering && <input type="password" className="w-full border p-3 rounded" placeholder="Confirmar Senha" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} required />}
             {error && <div className="text-red-500 text-sm">{error}</div>}
             <Button type="submit" disabled={loading} className="w-full py-3">Entrar</Button>
-            
         </form>
       </div>
-      {loading && <GlobalLoading message="Autenticando..." />}
     </div>
   );
 };

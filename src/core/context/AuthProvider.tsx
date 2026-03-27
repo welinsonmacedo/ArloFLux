@@ -28,7 +28,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isFetchingSession = useRef(false);
 
-  // ✅ Helper seguro pra evitar re-render inútil
   const setUserSafe = (user: User | null) => {
     setState(prev => {
       if (
@@ -49,8 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadUserFromSession = async () => {
     if (isFetchingSession.current) return;
-
-    // 🚫 se já tem usuário, não recarrega sessão
     if (state.currentUser) return;
 
     isFetchingSession.current = true;
@@ -66,7 +63,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userId = session.user.id;
 
-      // 👉 CLIENT
       const { data: clientData } = await supabase
         .from('clients')
         .select('*')
@@ -88,16 +84,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // 👉 STAFF
+      // ✨ CORREÇÃO 1: Buscando custom_roles e salvando o slug imediatamente
       const { data: staffData } = await supabase
         .from('staff')
-        .select('*, tenants(id, slug)')
+        .select('*, tenants(id, slug), custom_roles(permissions)')
         .eq('auth_user_id', userId)
         .maybeSingle();
 
       if (staffData) {
         const t = staffData.tenants;
         const tenantId = Array.isArray(t) ? t[0]?.id : t?.id;
+        const tenantSlug = Array.isArray(t) ? t[0]?.slug : t?.slug;
+
+        // Salva na memória do navegador para o RestaurantContext nunca se perder
+        if (tenantSlug) {
+            sessionStorage.setItem('fluxeat_tenant_slug', tenantSlug);
+        }
+
+        let allowedRoutes = staffData.allowed_routes || [];
+              
+        if (staffData.custom_roles?.permissions) {
+            if (staffData.custom_roles.permissions.allowed_modules) {
+                allowedRoutes = staffData.custom_roles.permissions.allowed_modules;
+            }
+        } else if (staffData.role === 'ADMIN') {
+            allowedRoutes = ['RESTAURANT', 'SNACKBAR', 'DISTRIBUTOR', 'COMMERCE', 'MANAGER', 'CONFIG', 'FINANCE', 'INVENTORY', 'HR', 'AUDIT', 'TIMECLOCK', 'SUPPORT'];
+        } else if (!staffData.custom_role_id && allowedRoutes.length === 0) {
+            if (['WAITER', 'KITCHEN', 'CASHIER'].includes(staffData.role)) {
+                allowedRoutes = ['RESTAURANT'];
+                if (staffData.role === 'CASHIER') allowedRoutes.push('COMMERCE');
+            }
+        }
 
         const user: User = {
           id: staffData.id,
@@ -106,6 +123,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           tenant_id: tenantId,
           auth_user_id: staffData.auth_user_id,
           email: staffData.email,
+          customRoleId: staffData.custom_role_id,
+          allowedRoutes: allowedRoutes,
+          allowedFeatures: staffData.custom_roles?.permissions?.allowed_features || []
         };
 
         setUserSafe(user);
@@ -113,7 +133,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // fallback
       setUserSafe(null);
 
     } catch (err) {
@@ -131,8 +150,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (event === 'SIGNED_OUT') {
         setUserSafe(null);
       }
-
-      // 🚫 IGNORA SIGNED_IN (evita flicker)
     });
 
     return () => {
@@ -160,13 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{
-        state,
-        login,
-        logout,
-        checkPermission,
-        refreshSession: loadUserFromSession,
-      }}
+      value={{ state, login, logout, checkPermission, refreshSession: loadUserFromSession }}
     >
       {children}
     </AuthContext.Provider>
