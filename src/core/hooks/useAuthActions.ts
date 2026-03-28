@@ -7,6 +7,7 @@ import { AuthService } from '../services/auth.service';
 import { getTenantSlug } from '../tenant/tenantResolver';
 import { AppError } from '../errors/AppError';
 import { LoginFormData, RegisterFormData } from '../validation/auth.schema';
+import { supabase } from '../api/supabaseClient'; // ✨ Importação do supabase adicionada
 
 export const useAuthActions = () => {
   const [loading, setLoading] = useState(false);
@@ -17,59 +18,154 @@ export const useAuthActions = () => {
   const { refresh: refreshRestaurant } = useRestaurant();
   const navigate = useNavigate();
 
-  const handleLogin = async (data: LoginFormData) => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const currentSlug = getTenantSlug();
-      const result = await AuthService.login(data, currentSlug);
-      
-      if (!result.staff) {
-        // É owner, redirecionar para seleção de restaurante
-        window.location.href = `/?restaurant=${currentSlug || ''}`;
-        return;
-      }
-      
-      // Salvar slug no sessionStorage
-      const tenantSlug = Array.isArray(result.staff.tenants) 
-        ? result.staff.tenants[0]?.slug 
-        : result.staff.tenants?.slug;
-      
-      if (tenantSlug) {
-        sessionStorage.setItem('fluxeat_tenant_slug', tenantSlug);
-      }
-      
-      // Fazer login no contexto
-      login({
-        id: result.staff.id,
-        name: result.staff.name,
-        role: result.staff.role,
-        tenant_id: result.staff.tenant_id,
-        email: result.staff.email,
-        auth_user_id: result.staff.auth_user_id,
-        customRoleId: result.staff.custom_role_id,
-        allowedRoutes: result.staff.allowed_routes,
-        allowedFeatures: result.staff.allowed_features,
-      });
-      
-      // Atualizar contexto do restaurante
-      if (refreshRestaurant) {
-        await refreshRestaurant();
-      }
-      
-      // Redirecionar baseado no role
-      this.redirectBasedOnRole(result.staff.role);
-      
-    } catch (err) {
-      const appError = err instanceof AppError ? err : new AppError('UNKNOWN_ERROR', 'Erro desconhecido');
-      setError(appError.userMessage);
-      console.error('Login error:', appError.toJSON());
-    } finally {
-      setLoading(false);
+  const redirectBasedOnRole = (role: string) => {
+    switch (role) {
+      case 'CLIENT':
+        navigate('/client/home', { replace: true });
+        break;
+      case 'SUPER_ADMIN':
+        navigate('/dashboard', { replace: true });
+        break;
+      default:
+        navigate('/modules', { replace: true });
     }
   };
-  
+
+  // ✨ A função handleLogin recriada com a blindagem robusta
+  const handleLogin = async (data: LoginFormData) => {
+      setLoading(true);
+      setError(null);
+      setSuccessMessage(null);
+      const emailTrimmed = data.email.trim();
+
+      try {
+          const currentSlug = getTenantSlug();
+
+          // 1. FAZ O LOGIN NO SUPABASE
+          const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({ 
+              email: emailTrimmed, 
+              password: data.password 
+          });
+          
+          if (signInError) throw signInError;
+          if (!authData.user) throw new Error("Erro desconhecido no retorno do usuário.");
+
+          const userId = authData.user.id;
+          const userEmail = authData.user.email;
+
+          let tenantId = '';
+
+          // 2. DESCOBRE O RESTAURANTE DA URL (Se houver)
+          if (currentSlug) {
+              const { data: tenantRef } = await supabase.from('tenants').select('id').eq('slug', currentSlug).single();
+              if (tenantRef) tenantId = tenantRef.id;
+          }
+
+          // 3. BUSCA O UTILIZADOR NA TABELA DE EQUIPE
+          let { data: staffData } = await supabase
+            .from('staff')
+            .select('*, tenants(id, slug, name), custom_roles(permissions)')
+            .eq('auth_user_id', userId)
+            .maybeSingle();
+          
+          // 4. SE NÃO ACHAR PELO ID, TENTA ACHAR PELO EMAIL E VINCULAR
+          if (!staffData && userEmail && tenantId) {
+               const { data: staffByEmail } = await supabase
+                .from('staff')
+                .select('*, tenants(id, slug, name), custom_roles(permissions)')
+                .eq('tenant_id', tenantId)
+                .eq('email', userEmail)
+                .is('auth_user_id', null)
+                .maybeSingle();
+
+               if (staffByEmail) {
+                   const { data: updatedStaff } = await supabase
+                    .from('staff')
+                    .update({ auth_user_id: userId })
+                    .eq('id', staffByEmail.id)
+                    .select('*, tenants(id, slug, name), custom_roles(permissions)')
+                    .single();
+                   if (updatedStaff) staffData = updatedStaff;
+               }
+          }
+
+          // 5. MODO CEO / DONO (Se ele não for Staff, vê se ele é Dono de algum restaurante)
+          if (!staffData) {
+              const { data: tenantData } = await supabase
+                  .from('tenants')
+                  .select('id, slug, name')
+                  .eq('owner_auth_id', userId)
+                  .limit(1)
+                  .maybeSingle();
+              
+              if (tenantData) {
+                  window.location.href = `/?restaurant=${tenantData.slug}`;
+                  return;
+              }
+          }
+
+          // 6. FINALMENTE CONSTRÓI A SESSÃO
+          if (staffData) {
+              const t = staffData.tenants;
+              const actualSlug = Array.isArray(t) ? t[0]?.slug : (t?.slug || '');
+              const actualTenantId = Array.isArray(t) ? t[0]?.id : (t?.id || '');
+
+              if (currentSlug && actualSlug && currentSlug !== actualSlug) {
+                  throw new Error("Você não tem permissão para acessar este restaurante.");
+              }
+
+              if (actualSlug) {
+                  sessionStorage.setItem('fluxeat_tenant_slug', actualSlug);
+              }
+
+              let allowedRoutes = staffData.allowed_routes || [];
+              
+              if (staffData.custom_roles?.permissions) {
+                  if (staffData.custom_roles.permissions.allowed_modules) {
+                      allowedRoutes = staffData.custom_roles.permissions.allowed_modules;
+                  }
+              } else if (staffData.role === 'ADMIN') {
+                  allowedRoutes = ['RESTAURANT', 'SNACKBAR', 'DISTRIBUTOR', 'COMMERCE', 'MANAGER', 'CONFIG', 'FINANCE', 'INVENTORY', 'HR', 'AUDIT', 'TIMECLOCK', 'SUPPORT'];
+              } else if (!staffData.custom_role_id && allowedRoutes.length === 0) {
+                  if (['WAITER', 'KITCHEN', 'CASHIER'].includes(staffData.role)) {
+                      allowedRoutes = ['RESTAURANT'];
+                      if (staffData.role === 'CASHIER') allowedRoutes.push('COMMERCE');
+                  }
+              }
+
+              login({
+                  id: staffData.id, 
+                  name: staffData.name, 
+                  role: staffData.role,
+                  tenant_id: actualTenantId,
+                  email: staffData.email, 
+                  auth_user_id: staffData.auth_user_id, 
+                  customRoleId: staffData.custom_role_id,
+                  allowedRoutes: allowedRoutes,
+                  allowedFeatures: staffData.custom_roles?.permissions?.allowed_features || []
+              });
+
+              if (refreshRestaurant) {
+                  refreshRestaurant();
+              }
+              
+              // Redireciona com base no cargo
+              redirectBasedOnRole(staffData.role);
+              return;
+          }
+
+          throw new Error("Usuário não encontrado ou sem restaurante vinculado.");
+
+      } catch (err: any) {
+          // ✨ AGORA MOSTRA O ERRO REAL NO CONSOLE E NA TELA!
+          console.error("ERRO COMPLETO NO LOGIN:", err);
+          setError(err.message || "Credenciais inválidas ou erro de autenticação.");
+          await supabase.auth.signOut();
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleRegister = async (data: RegisterFormData) => {
     setLoading(true);
     setError(null);
@@ -92,24 +188,11 @@ export const useAuthActions = () => {
       });
       
     } catch (err) {
-      const appError = err instanceof AppError ? err : new AppError('UNKNOWN_ERROR', 'Erro desconhecido');
+      const appError = err instanceof AppError ? err : new AppError('UNKNOWN_ERROR', 'Erro ao registrar usuário');
       setError(appError.userMessage);
       console.error('Register error:', appError.toJSON());
     } finally {
       setLoading(false);
-    }
-  };
-  
-  const redirectBasedOnRole = (role: string) => {
-    switch (role) {
-      case 'CLIENT':
-        navigate('/client/home', { replace: true });
-        break;
-      case 'SUPER_ADMIN':
-        navigate('/dashboard', { replace: true });
-        break;
-      default:
-        navigate('/modules', { replace: true });
     }
   };
   
