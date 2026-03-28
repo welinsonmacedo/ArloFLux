@@ -322,6 +322,7 @@ export const InventoryNewItemView: React.FC<{ onCancel?: () => void }> = ({ onCa
                                                 )}
                                             </select>
                                         </div>
+                                        
                                         <div>
                                             <label className="block text-xs font-bold mb-2 text-gray-700">
                                                 Unidade

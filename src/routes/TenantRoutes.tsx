@@ -4,7 +4,7 @@ import { Login } from "@/modules/auth/pages/Login";
 import { ModuleSelector } from "@/modules/auth/pages/ModuleSelector";
 
 import { WaiterPanel } from "@/modules/operational/components/WaiterPanel";
-import { KitchenPanel } from "@/modules/operational/components/KitchenPanel";
+
 
 import { RestaurantDashboard } from "@/modules/admin/pages/RestaurantDashboard";
 import { AdminDashboard } from "@/modules/admin/pages/AdminDashboard";
@@ -34,7 +34,7 @@ export const TenantRoutes = () => {
       <Route path="/modules" element={<ModuleSelector />} />
 
       <Route path="/waiter" element={<WaiterPanel />} />
-      <Route path="/kitchen" element={<KitchenPanel />} />
+    
 
       <Route path="/client/table/:tableId" element={<ClientRoutes />} />
 

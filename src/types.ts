@@ -602,6 +602,7 @@ export interface InventoryItem {
     isExtra: boolean; 
     targetCategories?: string[];
     supplierId?: string;
+     
 }
 
 export interface InventoryLog {
@@ -630,6 +631,7 @@ export interface Product {
   stockQuantity?: number;
   linkedExtraIds?: string[];
   targetCategories?: string[];
+  recipe?: string;
 }
 
 export interface OrderItem {

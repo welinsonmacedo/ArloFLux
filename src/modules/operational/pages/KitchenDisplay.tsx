@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { useMenu } from '@/core/context/MenuContext';
@@ -7,10 +6,12 @@ import { useInventory } from '@/core/context/InventoryContext';
 import { useFinance } from '@/core/context/FinanceContext';
 import { useUI } from '@/core/context/UIContext';
 import { OrderStatus, OrderItem } from '@/types';
-import { Clock, ChefHat, CheckCircle, AlertTriangle, Volume2, Plus, Printer, RefreshCcw, Bike, ArrowRight } from 'lucide-react';
+import { Clock, ChefHat, CheckCircle, AlertTriangle, Volume2, Plus, Printer, RefreshCcw, Bike, ArrowRight, BookOpen } from 'lucide-react';
 import { printHtml, getReceiptStyles } from '@/core/print/printHelper';
 import { playNotificationSound, unlockAudioContext } from '@/core/audio/audio';
 import { useRealtimeKDS } from '@/modules/kds/hooks/useRealtimeKDS';
+import { Modal } from '@/modules/common/components/Modal';
+import { Button } from '@/modules/common/components/Button';
 
 export const KitchenDisplay: React.FC = () => {
   const { state: restState } = useRestaurant();
@@ -27,6 +28,9 @@ export const KitchenDisplay: React.FC = () => {
   const wakeLockRef = useRef<any>(null);
   const lastSoundTime = useRef<number>(0);
 
+  const [selectedRecipe, setSelectedRecipe] = useState<{name: string, content: string} | null>(null);
+  const [printWithRecipe, setPrintWithRecipe] = useState(false);
+
   const handleRealtimeUpdate = useCallback(() => {
     fetchData();
   }, [fetchData]);
@@ -34,62 +38,44 @@ export const KitchenDisplay: React.FC = () => {
   useRealtimeKDS(restState.tenantId, handleRealtimeUpdate);
 
   const isKitchenItem = (item: OrderItem) => {
-      // Se o tipo do produto for explicitamente KITCHEN ou COMPOSITE, é um item de cozinha
       const type = String(item.productType || '').toUpperCase();
-      
       if (type === 'KITCHEN' || type === 'COMPOSITE') {
-          // Se tiver productId, verifica se é da categoria Bebidas (que geralmente vão pro bar)
           if (item.productId) {
               const product = menuState.products.find(p => p.id === item.productId);
               if (product && product.category === 'Bebidas') return false;
           }
           return true;
       }
-      
-      // Se o tipo for vazio ou desconhecido, tenta inferir pelo produto no menu
       if (item.productId) {
           const product = menuState.products.find(p => p.id === item.productId);
           if (product) {
               return product.type === 'KITCHEN' || (product.category !== 'Bebidas' && product.type !== 'BAR');
           }
       }
-      
-      // Se for um item de inventário sem tipo definido, assume cozinha se não for explicitamente BAR
-      if (item.inventoryItemId && !type) {
-          return true;
-      }
-
+      if (item.inventoryItemId && !type) return true;
       return false;
   };
 
   const graceMinutes = restState.businessInfo?.orderGracePeriodMinutes || 0;
 
   const activeOrders = orderState.orders.filter(order => {
-      // Ignora pedidos cancelados ou já entregues/finalizados
       if (order.status === 'CANCELLED' || order.status === 'DELIVERED') return false;
-      
-      // Para pedidos de delivery ou balcão, mostra imediatamente se houver itens de cozinha
       if (order.type === 'DELIVERY' || order.type === 'PDV') {
           return order.items && order.items.some(item => 
               isKitchenItem(item) && 
               (item.status === OrderStatus.PENDING || item.status === OrderStatus.PREPARING)
           );
       }
-
-      // Para pedidos de mesa (DINE_IN), respeita o tempo de carência
       if (order.type === 'DINE_IN') {
           const now = new Date().getTime();
           const orderTime = new Date(order.timestamp).getTime();
           const diffMinutes = (now - orderTime) / 60000;
           if (diffMinutes < graceMinutes) return false;
-
           return order.items && order.items.some(item => 
               isKitchenItem(item) && 
               (item.status === OrderStatus.PENDING || item.status === OrderStatus.PREPARING)
           );
       }
-
-      // Fallback para outros tipos de pedido
       return order.items && order.items.some(item => 
           isKitchenItem(item) && 
           (item.status === OrderStatus.PENDING || item.status === OrderStatus.PREPARING)
@@ -107,6 +93,7 @@ export const KitchenDisplay: React.FC = () => {
 
   const handleManualRefresh = async () => {
       setIsRefreshing(true);
+      fetchData();
       setTimeout(() => setIsRefreshing(false), 800);
   };
 
@@ -118,48 +105,34 @@ export const KitchenDisplay: React.FC = () => {
 
   const playSound = async (force: any = false) => {
       const isForce = typeof force === 'object' || force === true;
-      
-      // Se não estiver desbloqueado e não for forçado, não toca
       if (!orderState.audioUnlocked && !isForce) return;
-      
       const now = Date.now();
-      // Debounce de 3 segundos para evitar sons repetidos
       if (isForce || now - (lastSoundTime.current || 0) > 3000) {
           try {
               await playNotificationSound('kitchen');
               if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-              console.log("🔊 Som Cozinha Tocado");
               lastSoundTime.current = now;
               setAudioBlocked(false);
           } catch (e) {
-              console.warn("Autoplay bloqueado. Interaja com a página.", e);
               setAudioBlocked(true);
-              if (isForce) {
-                  showAlert({ title: "Áudio Bloqueado", message: "Clique no botão 'ATIVAR SOM' para habilitar.", type: "WARNING" });
-              }
           }
       }
   };
 
-  // Dispara o som se houver NOVOS itens
   useEffect(() => {
-      // Verifica se o áudio está desbloqueado E se houve aumento no número de pedidos pendentes
       if (orderState.audioUnlocked && currentPendingCount > prevPendingCount.current) {
           playSound();
       }
-      // Atualiza a referência para a próxima comparação
       prevPendingCount.current = currentPendingCount;
   }, [currentPendingCount, orderState.audioUnlocked]);
 
   const enableAudio = async () => {
       try {
           await unlockAudioContext();
-          await playNotificationSound('kitchen'); // Test sound
+          await playNotificationSound('kitchen');
           orderDispatch({ type: 'UNLOCK_AUDIO' });
           requestWakeLock();
       } catch (e) {
-          console.error("Erro ao ativar áudio inicial:", e);
-          // Força o desbloqueio mesmo se falhar (para liberar a UI)
           orderDispatch({ type: 'UNLOCK_AUDIO' });
       }
   };
@@ -172,7 +145,7 @@ export const KitchenDisplay: React.FC = () => {
   };
 
   const groupOrderItems = (items: OrderItem[]) => {
-      const grouped: { main: OrderItem, extras: OrderItem[] }[] = [];
+      const grouped: { main: any, extras: OrderItem[] }[] = [];
       const kitchenItems = items.filter(item => isKitchenItem(item) && item.status !== OrderStatus.DELIVERED && item.status !== OrderStatus.CANCELLED);
 
       kitchenItems.forEach(item => {
@@ -196,7 +169,13 @@ export const KitchenDisplay: React.FC = () => {
         <head><title>Cozinha</title>${getReceiptStyles()}</head>
         <body>
             <div class="header"><span class="title">${title}</span><span class="subtitle">Pedido #${order.id.slice(0,4)} • ${date}</span>${order.deliveryInfo ? `<div class="subtitle">${order.deliveryInfo.customerName}</div>` : ''}</div>
-            ${groupedItems.map(({ main, extras }) => `<div style="margin-bottom: 10px; border-bottom: 1px dotted #ccc; padding-bottom: 5px;"><div class="item-row"><span>${main.quantity}x ${main.productName}</span></div>${main.notes ? `<div class="note">OBS: ${main.notes}</div>` : ''}${extras.map(e => `<div class="extras">+ ${e.quantity}x ${e.productName}</div>`).join('')}</div>`).join('')}
+            ${groupedItems.map(({ main, extras }) => `
+                <div style="margin-bottom: 10px; border-bottom: 1px dotted #ccc; padding-bottom: 5px;">
+                    <div class="item-row"><span>${main.quantity}x ${main.productName}</span></div>
+                    ${main.notes ? `<div class="note">OBS: ${main.notes}</div>` : ''}
+                    ${extras.map(e => `<div class="extras">+ ${e.quantity}x ${e.productName}</div>`).join('')}
+                    ${printWithRecipe && main.recipe ? `<div style="font-size: 10px; color: #666; margin-top: 4px; font-style: italic;">REC: ${main.recipe}</div>` : ''}
+                </div>`).join('')}
         </body>
         </html>
       `;
@@ -224,27 +203,30 @@ export const KitchenDisplay: React.FC = () => {
              <p className="text-xs text-slate-500">Fluxo de pedidos em tempo real</p>
          </div>
         <div className="flex items-center gap-3">
-             {/* Indicadores Real-time */}
+             <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase cursor-pointer bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                <input 
+                    type="checkbox" 
+                    checked={printWithRecipe} 
+                    onChange={(e) => setPrintWithRecipe(e.target.checked)}
+                    className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 bg-transparent"
+                />
+                Imprimir c/ Receita
+            </label>
+
              <div className="hidden md:flex items-center gap-2 mr-4">
                  <div className={`flex items-center gap-1 px-2 py-1 rounded-lg border ${finState.activeCashSession ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-                     <div className={`w-1.5 h-1.5 rounded-full ${finState.activeCashSession ? 'bg-emerald-500 animate-pulse-fast' : 'bg-red-500'}`} />
+                     <div className={`w-1.5 h-1.5 rounded-full ${finState.activeCashSession ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                      <span className="text-[8px] font-black uppercase tracking-widest">Caixa {finState.activeCashSession ? 'Aberto' : 'Fechado'}</span>
                  </div>
-                 {invState.inventory.some(i => i.quantity <= i.minQuantity) && (
-                     <div className="flex items-center gap-1 px-2 py-1 rounded-lg border bg-amber-500/10 border-amber-500/20 text-amber-400">
-                         <AlertTriangle size={10} />
-                         <span className="text-[8px] font-black uppercase tracking-widest">Estoque Baixo</span>
-                     </div>
-                 )}
              </div>
 
              {audioBlocked && (
-                 <button onClick={() => playSound(true)} className="bg-red-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest animate-pulse-fast shadow-lg shadow-red-500/30 flex items-center gap-1">
+                 <button onClick={() => playSound(true)} className="bg-red-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest animate-pulse shadow-lg shadow-red-500/30 flex items-center gap-1">
                      <Volume2 size={14} /> Ativar Som
                  </button>
              )}
-             <button onClick={() => playSound(true)} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-300 ease-out text-emerald-400" title="Testar Som"><Volume2 size={18} /></button>
-             <button onClick={handleManualRefresh} className={`p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-300 ease-out ${isRefreshing ? 'animate-spin' : ''}`}><RefreshCcw size={18} className="text-emerald-400" /></button>
+             <button onClick={() => playSound(true)} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-emerald-400" title="Testar Som"><Volume2 size={18} /></button>
+             <button onClick={handleManualRefresh} className={`p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin' : ''}`}><RefreshCcw size={18} className="text-emerald-400" /></button>
              <div className="text-sm font-black font-mono text-white bg-white/10 px-3 py-1.5 rounded-xl border border-white/5">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
       </div>
@@ -262,7 +244,7 @@ export const KitchenDisplay: React.FC = () => {
           const goesToCashier = isDelivery || isPDV;
           
           return (
-            <div key={order.id} className={`min-w-[320px] max-w-[320px] bg-slate-900 rounded-[2rem] overflow-hidden border-2 flex flex-col shadow-2xl transition-all duration-300 ease-out h-full ${isLate ? 'border-red-500 ring-4 ring-red-500/10' : (isDelivery ? 'border-orange-500' : (isPDV ? 'border-purple-500' : 'border-white/10'))}`}>
+            <div key={order.id} className={`min-w-[320px] max-w-[320px] bg-slate-900 rounded-[2rem] overflow-hidden border-2 flex flex-col shadow-2xl transition-all duration-300 h-full ${isLate ? 'border-red-500 ring-4 ring-red-500/10' : (isDelivery ? 'border-orange-500' : (isPDV ? 'border-purple-500' : 'border-white/10'))}`}>
               
               <div className={`p-4 flex justify-between items-center shrink-0 ${isLate ? 'bg-red-600' : (isDelivery ? 'bg-orange-600' : (isPDV ? 'bg-purple-600' : 'bg-slate-800'))}`}>
                 <div className="overflow-hidden">
@@ -283,27 +265,40 @@ export const KitchenDisplay: React.FC = () => {
                         </>
                     )}
                 </div>
-                <div className="flex items-center gap-2 text-xl font-black font-mono bg-black/30 px-3 py-1.5 rounded-2xl shrink-0"><Clock size={20} className={isLate ? 'animate-bounce' : ''} /> {elapsedMinutes}m</div>
+                <div className="flex items-center gap-2 text-xl font-black font-mono bg-black/30 px-3 py-1.5 rounded-2xl shrink-0"><Clock size={20} className={isLate ? 'animate-pulse' : ''} /> {elapsedMinutes}m</div>
               </div>
               
               <div className="bg-slate-850 p-3 border-b border-white/5 flex justify-between shrink-0 gap-2">
-                  <button onClick={() => handlePrintOrder(order)} className="bg-slate-700 hover:bg-slate-600 p-2 rounded-xl text-white transition-all duration-300 ease-out"><Printer size={20} /></button>
-                  <button onClick={() => order.items.forEach(i => isKitchenItem(i) && orderDispatch({ type: 'UPDATE_ITEM_STATUS', orderId: order.id, itemId: i.id, status: OrderStatus.READY }))} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-xs flex-1 transition-all duration-300 ease-out uppercase tracking-tight">Concluir Tudo</button>
+                  <button onClick={() => handlePrintOrder(order)} className="bg-slate-700 hover:bg-slate-600 p-2 rounded-xl text-white transition-all"><Printer size={20} /></button>
+                  <button onClick={() => order.items.forEach(i => isKitchenItem(i) && orderDispatch({ type: 'UPDATE_ITEM_STATUS', orderId: order.id, itemId: i.id, status: OrderStatus.READY }))} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-xs flex-1 transition-all uppercase tracking-tight">Concluir Tudo</button>
               </div>
 
               <div className="p-4 flex-1 space-y-3 overflow-y-auto custom-scrollbar">
                 {groupedItems.map(({ main, extras }) => (
-                    <div key={main.id} className={`p-4 rounded-3xl border-2 transition-all duration-300 ease-out relative flex flex-col gap-3 ${main.status === OrderStatus.PENDING ? 'bg-slate-800 border-emerald-500/20' : 'bg-blue-600/10 border-blue-500/30'}`}>
+                    <div key={main.id} className={`p-4 rounded-3xl border-2 transition-all relative flex flex-col gap-3 ${main.status === OrderStatus.PENDING ? 'bg-slate-800 border-emerald-500/20' : 'bg-blue-600/10 border-blue-500/30'}`}>
                         <div>
-                            <div className="flex justify-between items-start mb-2"><span className="font-black text-2xl text-white tracking-tight leading-none">{main.quantity}x {main.productName}</span></div>
-                            {main.notes && <div className="bg-yellow-500/10 border-2 border-yellow-500/30 text-yellow-500 font-black text-xs p-3 rounded-2xl flex items-start gap-2 mb-2 animate-pulse-fast"><AlertTriangle size={16} className="shrink-0" /><span className="uppercase">{main.notes}</span></div>}
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="font-black text-2xl text-white tracking-tight leading-none">{main.quantity}x {main.productName}</span>
+                                
+                                {main.recipe && (
+                                    <button 
+                                        onClick={() => setSelectedRecipe({ name: main.productName, content: main.recipe })}
+                                        className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/40 transition-all shrink-0"
+                                        title="Ver Receita"
+                                    >
+                                        <BookOpen size={18} />
+                                    </button>
+                                )}
+                            </div>
+                            
+                            {main.notes && <div className="bg-yellow-500/10 border-2 border-yellow-500/30 text-yellow-500 font-black text-xs p-3 rounded-2xl flex items-start gap-2 mb-2"><AlertTriangle size={16} className="shrink-0" /><span className="uppercase">{main.notes}</span></div>}
                             {extras.length > 0 && <div className="mt-2 pl-4 border-l-2 border-dashed border-white/20 space-y-1">{extras.map(e => <div key={e.id} className="text-emerald-300 text-sm font-bold flex items-center gap-2"><Plus size={12} /> {e.quantity}x {e.productName}</div>)}</div>}
                         </div>
                         <div className="flex gap-2 mt-auto">
                             {main.status === OrderStatus.PENDING ? (
-                                <button onClick={() => updateGroupStatus(order.id, main, extras, OrderStatus.PREPARING)} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 transition-all duration-300 ease-out">Começar</button>
+                                <button onClick={() => updateGroupStatus(order.id, main, extras, OrderStatus.PREPARING)} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 transition-all">Começar</button>
                             ) : (
-                                <button onClick={() => updateGroupStatus(order.id, main, extras, OrderStatus.READY)} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 transition-all duration-300 ease-out flex items-center justify-center gap-2">{goesToCashier ? <span className="flex items-center gap-2"><ArrowRight size={18}/> Enviar ao Caixa</span> : <span className="flex items-center gap-2"><CheckCircle size={18}/> Pronto!</span>}</button>
+                                <button onClick={() => updateGroupStatus(order.id, main, extras, OrderStatus.READY)} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2">{goesToCashier ? <span className="flex items-center gap-2"><ArrowRight size={18}/> Enviar ao Caixa</span> : <span className="flex items-center gap-2"><CheckCircle size={18}/> Pronto!</span>}</button>
                             )}
                         </div>
                     </div>
@@ -313,6 +308,23 @@ export const KitchenDisplay: React.FC = () => {
           );
         })}
       </div>
+
+      <Modal 
+          isOpen={!!selectedRecipe} 
+          onClose={() => setSelectedRecipe(null)}
+          title={`Receita: ${selectedRecipe?.name}`}
+      >
+          <div className="p-4">
+              <div className="bg-slate-900 p-6 rounded-2xl border-4 border-slate-800 shadow-2xl">
+                  <pre className="whitespace-pre-wrap font-mono text-emerald-400 leading-relaxed text-sm italic">
+                      {selectedRecipe?.content}
+                  </pre>
+              </div>
+              <div className="mt-6 flex justify-end">
+                  <Button onClick={() => setSelectedRecipe(null)} className="bg-slate-800 text-white font-black uppercase tracking-widest">Fechar Painel</Button>
+              </div>
+          </div>
+      </Modal>
     </div>
   );
 };

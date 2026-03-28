@@ -206,6 +206,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onCl
                     <p className="text-[10px] text-gray-400 mt-1 text-right">{description.length}/200 caracteres</p>
                 </div>
             )}
+            
         </div>
     </Modal>
   );

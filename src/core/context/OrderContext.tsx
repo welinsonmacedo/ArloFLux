@@ -113,6 +113,26 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const [tablesRes, ordersRes, callsRes, staffRes] = await Promise.all([
               supabase.from('restaurant_tables').select('*').eq('tenant_id', tenantId).order('number'),
               supabase.from('orders').select(`*, items:order_items (*)`).eq('tenant_id', tenantId).is('deleted_at', null).gte('created_at', yesterday.toISOString()),
+              // ✨ ATUALIZAÇÃO AQUI: Adicionado JOIN para buscar ingredientes da receita
+    supabase.from('orders')
+                .select(`
+                    *,
+                    items:order_items (
+                        *,
+                        product:inventory_items (
+                            id,
+                            name,
+                            -- Busca na tabela inventory_recipes usando o ID do ingrediente
+                            recipe_ingredients:inventory_recipes (
+                                quantity,
+                                ingredient:inventory_items (name, unit)
+                            )
+                        )
+                    )
+                `)
+        .eq('tenant_id', tenantId)
+        .is('deleted_at', null)
+        .gte('created_at', yesterday.toISOString()),
               supabase.from('service_calls').select('*').eq('tenant_id', tenantId).eq('status', 'PENDING'),
               supabase.from('staff').select('id, name, allowed_routes').eq('tenant_id', tenantId)
           ]);
@@ -155,7 +175,10 @@ export const OrderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   items: (o.items || []).map((i: any) => ({ 
                       id: i.id, productId: i.product_id, inventoryItemId: i.inventory_item_id, quantity: Number(i.quantity) || 0, 
                       notes: i.notes, status: i.status, productName: i.product_name, productType: i.product_type, 
-                      productPrice: Number(i.product_price) || 0, productCostPrice: Number(i.product_cost_price) || 0
+                      productPrice: Number(i.product_price) || 0, productCostPrice: Number(i.product_cost_price) || 0,recipe: i.product?.ingredients?.map((ing: any) => 
+            `${ing.quantity}${ing.ingredient.unit} - ${ing.ingredient.name}`
+        ).join('\n') || null
+       
                   }))
               }));
               localDispatch({ type: 'SET_ORDERS', orders: mappedOrders });
