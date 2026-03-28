@@ -1,6 +1,7 @@
 // modules/auth/components/Login.tsx
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from '@/core/context/AuthProvider';
 import { useAuthForm } from '@/core/hooks/useFormValidation';
 import { useAuthActions } from '@/core/hooks/useAuthActions';
 import { useRestaurant } from '@/core/context/RestaurantContext';
@@ -20,7 +21,6 @@ export const Login: React.FC = () => {
     register, 
     handleSubmit, 
     formState: { errors, isSubmitting },
-    getFieldError,
     reset 
   } = useAuthForm({
     isRegistering,

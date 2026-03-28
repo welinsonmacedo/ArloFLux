@@ -11,10 +11,18 @@ if (!isSupabaseConfigured()) {
   logger.info('✅ Supabase: Chaves detectadas. Iniciando cliente...');
 }
 
-export const supabase: any = createClient(
-  environment.supabaseUrl || 'https://placeholder.supabase.co',
-  environment.supabaseAnonKey || 'placeholder-key'
-);
+// ✨ PROTEÇÃO EXTRA: Forçamos o placeholder se a URL vier do .env sem 'http'
+let finalUrl = environment.supabaseUrl;
+if (!finalUrl || !finalUrl.startsWith('http')) {
+    finalUrl = 'https://placeholder.supabase.co';
+}
+
+let finalKey = environment.supabaseAnonKey;
+if (!finalKey) {
+    finalKey = 'placeholder-key';
+}
+
+export const supabase: any = createClient(finalUrl, finalKey);
 
 export const logAudit = async (
   tenantId: string | null | undefined, 
@@ -35,16 +43,15 @@ export const logAudit = async (
       }
     };
 
-    // Garantir que UUIDs vazios sejam passados como nulos e não como strings vazias ('')
+    // Garantir que UUIDs vazios sejam passados como nulos
     const safeTenantId = tenantId && tenantId.trim() !== '' ? tenantId : null;
     let safeUserId = userId && typeof userId === 'string' && userId.trim() !== '' ? userId : null;
     
-    // Tratativa caso o userId venha como Array (como vimos acontecer noutros ficheiros)
+    // Tratativa caso o userId venha como Array
     if (Array.isArray(userId)) {
         safeUserId = userId[0] || null;
     }
 
-    // A MUDANÇA PRINCIPAL: Capturar o `error` da requisição
     const { error } = await supabase.from('audit_logs').insert({
       tenant_id: safeTenantId,
       user_id: safeUserId,
@@ -54,14 +61,12 @@ export const logAudit = async (
       details: structuredDetails
     });
 
-    // Se houver erro de banco de dados (RLS, FK, tipos), o Supabase coloca aqui
     if (error) {
       logger.error("Falha do Supabase ao gravar log de auditoria:", error);
-      console.error("[AUDIT ERROR]", error); // Adicionado para forçar a visualização no console do navegador
+      console.error("[AUDIT ERROR]", error); 
     }
 
   } catch (error) {
-    // Aqui só cai se houver falha de rede/conexão ou quebra de código JS
     logger.error("Erro interno ao tentar registrar log de auditoria:", error);
   }
 };

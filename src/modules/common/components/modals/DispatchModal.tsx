@@ -23,7 +23,6 @@ export const DispatchModal: React.FC<DispatchModalProps> = ({ isOpen, onClose, o
     // Reset state when modal opens
     useEffect(() => {
         if (isOpen && order) {
-            // Try to guess default based on order method
             const method = restState.businessInfo?.deliverySettings?.find(m => m.name === order.deliveryInfo?.platform);
             if (method && method.type === 'APP') {
                 setDispatchType('APP');
@@ -38,7 +37,8 @@ export const DispatchModal: React.FC<DispatchModalProps> = ({ isOpen, onClose, o
     if (!order) return null;
 
     const deliveryApps = restState.businessInfo?.deliverySettings?.filter(m => m.type === 'APP' && m.isActive) || [];
-    const staffMembers = staffState.users.filter(u => u.status === 'ACTIVE'); 
+    // Proteção extra caso o estado do staff ainda não tenha carregado
+    const staffMembers = staffState.users?.filter(u => u.status === 'ACTIVE') || []; 
 
     const handleConfirm = () => {
         let courierName = '';
@@ -56,7 +56,8 @@ export const DispatchModal: React.FC<DispatchModalProps> = ({ isOpen, onClose, o
         onClose();
     };
 
-    const total = order.items.reduce((acc, i) => acc + (i.productPrice * i.quantity), 0) + (order.deliveryInfo?.deliveryFee || 0);
+    // Proteção extra para garantir que order.items existe (evita crash de tela branca)
+    const total = (order.items || []).reduce((acc, i) => acc + ((i.productPrice || 0) * (i.quantity || 1)), 0) + (order.deliveryInfo?.deliveryFee || 0);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Despachar Pedido" maxWidth="md">
@@ -64,12 +65,12 @@ export const DispatchModal: React.FC<DispatchModalProps> = ({ isOpen, onClose, o
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div className="flex justify-between items-start mb-2">
                         <div>
-                            <h3 className="font-bold text-slate-800">{order.deliveryInfo?.customerName}</h3>
-                            <p className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={12}/> {order.deliveryInfo?.address}</p>
+                            <h3 className="font-bold text-slate-800">{order.deliveryInfo?.customerName || 'Cliente não informado'}</h3>
+                            <p className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={12}/> {order.deliveryInfo?.address || 'Endereço não informado'}</p>
                         </div>
                         <div className="text-right">
                             <p className="font-black text-slate-800">R$ {total.toFixed(2)}</p>
-                            <p className="text-xs text-slate-500 uppercase">{order.deliveryInfo?.paymentMethod}</p>
+                            <p className="text-xs text-slate-500 uppercase">{order.deliveryInfo?.paymentMethod || 'A combinar'}</p>
                         </div>
                     </div>
                 </div>

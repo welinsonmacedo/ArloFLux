@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import { Login } from '../Login';
+import { Login} from '../Login';
 import { AuthProvider } from '@/core/context/AuthProvider';
 import { RestaurantProvider } from '@/core/context/RestaurantContext';
 
