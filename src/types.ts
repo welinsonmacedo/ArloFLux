@@ -63,6 +63,8 @@ export interface EventType {
     operation: '+' | '-';
     isActive: boolean;
     calculationType: 'FIXED' | 'PERCENTAGE';
+    esocialCode?: string; // NOVO: Tabela 03 do eSocial
+    esocialNature?: string;
 }
 
 export interface HrJobRole {
@@ -169,6 +171,10 @@ export interface RhPayrollSetting {
     integrateFinance?: boolean;
     // Time Clock Settings
     timeClock?: TimeClockConfig;
+    esocialCnae?: string;
+    esocialFap?: number;
+    esocialRat?: number;
+    esocialFpas?: string;
 }
 
 export interface DsrConfig {

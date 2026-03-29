@@ -77,7 +77,9 @@ function restaurantReducer(state: RestaurantState, action: Action): RestaurantSt
     case "UPDATE_GLOBAL_SETTINGS": return { ...state, globalSettings: action.settings }
     case "UPDATE_PLAN_LIMITS": return { ...state, planLimits: action.limits }
     case "SYNC_REALTIME_DATA": return {
-        ...state, theme: action.payload.theme_config || state.theme,
+        ...state, 
+        theme: action.payload.theme_config || state.theme,
+        businessInfo: action.payload.business_info || state.businessInfo, // ADICIONADO PARA SINCRONIZAR A EMPRESA
         allowedModules: action.payload.allowed_modules || state.allowedModules,
         allowedFeatures: action.payload.allowed_features || state.allowedFeatures,
       }
@@ -86,11 +88,14 @@ function restaurantReducer(state: RestaurantState, action: Action): RestaurantSt
   }
 }
 
+// ADICIONADO AS FUNÇÕES NA INTERFACE
 interface ContextProps {
   state: RestaurantState
   authorize: (tenantId: string, tableId: string) => void
   setActiveModule: (module: SystemModule) => void
   refresh: () => void 
+  updateBusinessInfo: (info: RestaurantBusinessInfo) => Promise<void>
+  updateTheme: (theme: RestaurantTheme) => Promise<void>
 }
 
 const RestaurantContext = createContext<ContextProps | undefined>(undefined)
@@ -146,7 +151,6 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (plan?.limits) planLimits = { ...defaultPlanLimits, ...plan.limits }
       }
 
-      // ✨ SEGREDO DE SEGURANÇA: Se estiver inativo, apagamos o activeModule para impedir que ele force a entrada pela URL
       const isInactive = tenant.status === "INACTIVE";
       const storedModule = isInactive ? null : (localStorage.getItem(`arloflux_module_${tenant.id}`) as SystemModule | null);
       const storedTable = localStorage.getItem(`arloflux_auth_${tenant.id}`)
@@ -155,8 +159,9 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         type: "INIT_DATA",
         payload: {
           tenantId: tenant.id, tenantSlug: tenant.slug,
-          isInactiveTenant: isInactive, // ✨ MANDAMOS A INFO DE BLOQUEIO PARA A TELA
-          theme: tenant.theme_config || initialState.theme, businessInfo: tenant.business_info || initialState.businessInfo,
+          isInactiveTenant: isInactive, 
+          theme: tenant.theme_config || initialState.theme, 
+          businessInfo: tenant.business_info || initialState.businessInfo,
           allowedModules: tenant.allowed_modules || ["RESTAURANT"], allowedFeatures: tenant.allowed_features || [],
           globalSettings, planLimits, activeModule: storedModule,
           isAuthorized: !!storedTable, tableId: storedTable,
@@ -172,6 +177,32 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     dispatch({ type: "SET_LOADING", value: true });
     init();
   }, [init]);
+
+  // ---> AS FUNÇÕES AGORA ESTÃO AQUI! <---
+  const updateBusinessInfo = async (info: RestaurantBusinessInfo) => {
+      if (!state.tenantId) return;
+      
+      const { error } = await supabase
+          .from('tenants')
+          .update({ business_info: info })
+          .eq('id', state.tenantId);
+
+      if (error) throw error;
+      dispatch({ type: "UPDATE_BUSINESS_INFO", info });
+  };
+
+  const updateTheme = async (theme: RestaurantTheme) => {
+      if (!state.tenantId) return;
+      
+      const { error } = await supabase
+          .from('tenants')
+          .update({ theme_config: theme })
+          .eq('id', state.tenantId);
+
+      if (error) throw error;
+      dispatch({ type: "UPDATE_THEME", theme });
+  };
+  // ----------------------------------------
 
   useEffect(() => {
     if (!state.tenantId) return
@@ -191,7 +222,6 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [])
 
   const setActiveModule = (module: SystemModule) => {
-    // ✨ SEGREDO DE SEGURANÇA 2: Impede que o front-end consiga selecionar módulos se estiver inativo
     if (!state.tenantId || state.isInactiveTenant) return
     localStorage.setItem(`arloflux_module_${state.tenantId}`, module)
     dispatch({ type: "SET_ACTIVE_MODULE", module })
@@ -200,7 +230,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => { init() }, [init])
 
   return (
-    <RestaurantContext.Provider value={{ state, authorize, setActiveModule, refresh }}>
+    // AS FUNÇÕES FORAM ADICIONADAS AO PROVIDER
+    <RestaurantContext.Provider value={{ state, authorize, setActiveModule, refresh, updateBusinessInfo, updateTheme }}>
       {state.isLoading ? (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />

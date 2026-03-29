@@ -1,10 +1,10 @@
-
+// src/modules/staff/pages/admin/StaffList.tsx
 import React, { useState } from 'react';
 import { useStaff } from '@/core/context/StaffContext';
 import { useUI } from '@/core/context/UIContext';
 import { Button } from '@/modules/common/components/Button';
 import { User, EmployeeStatus } from '@/types';
-import { Edit, Trash2, UserPlus, Building2, Calendar, BadgeCheck } from 'lucide-react';
+import { Edit, Trash2, UserPlus, Building2, Calendar, BadgeCheck, AlertCircle } from 'lucide-react';
 import { StaffFormModal } from '@/modules/common/components/modals/StaffFormModal';
 
 export const StaffList: React.FC = () => {
@@ -14,7 +14,25 @@ export const StaffList: React.FC = () => {
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [activeTab, setActiveTab] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
-    const getStatusColor = (status?: EmployeeStatus) => {
+    // Função para calcular o status em tempo real baseado no banco de dados
+    const getDynamicStatus = (user: User): EmployeeStatus => {
+        // 1. Verifica se tem rescisão efetivada
+        const termination = staffState.terminations?.find(t => t.staffId === user.id && t.status === 'APPROVED');
+        if (termination || user.status === 'TERMINATED') return 'TERMINATED';
+
+        // 2. Verifica se está em período de férias no momento atual
+        const today = new Date();
+        const activeVacation = staffState.vacationSchedules?.find(v => {
+            const start = new Date(v.startDate);
+            const end = new Date(v.endDate);
+            return v.staffId === user.id && v.status === 'APPROVED' && today >= start && today <= end;
+        });
+        if (activeVacation) return 'VACATION';
+
+        return user.status || 'ACTIVE';
+    };
+
+    const getStatusStyle = (status: EmployeeStatus) => {
         switch(status) {
             case 'ACTIVE': return 'bg-green-100 text-green-700 border-green-200';
             case 'ON_LEAVE': return 'bg-orange-100 text-orange-700 border-orange-200';
@@ -24,11 +42,22 @@ export const StaffList: React.FC = () => {
         }
     };
 
+    const translateStatus = (status: EmployeeStatus) => {
+        switch(status) {
+            case 'ACTIVE': return 'Ativo';
+            case 'ON_LEAVE': return 'Afastado';
+            case 'TERMINATED': return 'Desligado';
+            case 'VACATION': return 'Em Férias';
+            default: return status;
+        }
+    };
+
     const filteredUsers = staffState.users.filter(user => {
+        const dynamicStatus = getDynamicStatus(user);
         if (activeTab === 'ACTIVE') {
-            return user.status !== 'TERMINATED';
+            return dynamicStatus !== 'TERMINATED';
         } else {
-            return user.status === 'TERMINATED';
+            return dynamicStatus === 'TERMINATED';
         }
     });
 
@@ -43,18 +72,18 @@ export const StaffList: React.FC = () => {
                     <div className="flex bg-gray-100 p-1 rounded-lg">
                         <button 
                             onClick={() => setActiveTab('ACTIVE')}
-                            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'ACTIVE' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'ACTIVE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                         >
                             Ativos
                         </button>
                         <button 
                             onClick={() => setActiveTab('INACTIVE')}
-                            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'INACTIVE' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'INACTIVE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                         >
                             Inativos
                         </button>
                     </div>
-                    <Button onClick={() => { setEditingUser(null); setIsModalOpen(true); }} className="bg-pink-600 hover:bg-pink-700 text-white border-transparent">
+                    <Button onClick={() => { setEditingUser(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white border-transparent">
                         <UserPlus size={18}/> Novo Colaborador
                     </Button>
                 </div>
@@ -67,7 +96,7 @@ export const StaffList: React.FC = () => {
                             <tr>
                                 <th className="p-4">Matrícula</th>
                                 <th className="p-4">Colaborador</th>
-                                <th className="p-4">Cargo / Função</th>
+                                <th className="p-4">Cargo (CBO)</th>
                                 <th className="p-4">Departamento</th>
                                 <th className="p-4">Admissão & Contrato</th>
                                 <th className="p-4">Salário Base</th>
@@ -76,14 +105,18 @@ export const StaffList: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredUsers.map(user => (
+                            {filteredUsers.map(user => {
+                                const status = getDynamicStatus(user);
+                                const hrRole = staffState.hrJobRoles.find(r => r.id === user.hrJobRoleId);
+                                
+                                return (
                                 <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
                                     <td className="p-4 font-mono font-bold text-blue-600">
                                         {user.registrationNumber || '-'}
                                     </td>
                                     <td className="p-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-600 font-black text-sm shrink-0">
+                                            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-black text-sm shrink-0">
                                                 {user.name.charAt(0)}
                                             </div>
                                             <div>
@@ -94,9 +127,9 @@ export const StaffList: React.FC = () => {
                                     </td>
                                     <td className="p-4">
                                         <div className="font-medium text-slate-700">
-                                            {user.customRoleName || (user.role === 'ADMIN' ? 'Administrador' : 'Cargo não definido')}
+                                            {hrRole ? hrRole.title : (user.customRoleName || 'Não definido')}
                                         </div>
-                                        {user.role === 'ADMIN' && <div className="text-[10px] text-purple-600 font-bold uppercase">Sistema</div>}
+                                        {hrRole?.cboCode && <div className="text-[10px] text-gray-400 font-mono">CBO: {hrRole.cboCode}</div>}
                                     </td>
                                     <td className="p-4 text-slate-600">
                                         <div className="flex items-center gap-2">
@@ -120,8 +153,8 @@ export const StaffList: React.FC = () => {
                                         R$ {(user.baseSalary || 0).toFixed(2)}
                                     </td>
                                     <td className="p-4 text-center">
-                                        <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase border ${getStatusColor(user.status)}`}>
-                                            {user.status || 'ACTIVE'}
+                                        <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase border ${getStatusStyle(status)}`}>
+                                            {translateStatus(status)}
                                         </span>
                                     </td>
                                     <td className="p-4 text-right">
@@ -143,11 +176,11 @@ export const StaffList: React.FC = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
-                            {staffState.users.length === 0 && (
+                            )})}
+                            {filteredUsers.length === 0 && (
                                 <tr>
                                     <td colSpan={8} className="p-10 text-center text-gray-400">
-                                        Nenhum colaborador encontrado.
+                                        Nenhum colaborador encontrado nesta aba.
                                     </td>
                                 </tr>
                             )}

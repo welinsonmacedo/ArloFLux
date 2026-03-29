@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/modules/common/components/Modal';
 import { useStaff } from '@/core/context/StaffContext';
 import { useUI } from '@/core/context/UIContext';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { User, Role, ContractType, WorkModel } from '@/types';
-import { Shield, Mail, User as UserIcon, Briefcase, Clock, MapPin, DollarSign, HeartPulse, FileText, Printer, FileSignature, RefreshCcw } from 'lucide-react';
+import { Shield, Mail, User as UserIcon, Briefcase, Clock, MapPin, DollarSign, HeartPulse, FileText, Printer, FileSignature, RefreshCcw, AlertTriangle } from 'lucide-react';
 import { printStaffSheet } from '@/core/print/printStaffSheet';
 import { printContractHtml, replaceContractVariables } from '@/core/print/printContract';
 import ReactQuill from 'react-quill';
@@ -104,6 +103,32 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
           return showAlert({ title: "Cargo Obrigatório", message: "Selecione um cargo cadastrado para o colaborador.", type: "WARNING" });
       }
 
+      // --- VALIDAÇÃO ESOCIAL (Apenas para RH e vínculos empregatícios) ---
+      if (variant === 'RH' && ['CLT', 'TEMPORARY', 'INTERN'].includes(form.contractType || 'CLT')) {
+          const missingFields = [];
+          if (!form.documentCpf) missingFields.push("CPF");
+          if (!form.birthDate) missingFields.push("Data de Nascimento");
+          if (!form.mothersName) missingFields.push("Nome da Mãe");
+          if (!form.addressZip || !form.addressStreet || !form.addressNumber || !form.addressCity || !form.addressState) missingFields.push("Endereço Completo (CEP, Rua, Número, Cidade, UF)");
+          if (!form.hrJobRoleId) missingFields.push("Cargo/Função de RH (CBO)");
+          if (!form.hireDate) missingFields.push("Data de Admissão");
+          if (!form.baseSalary || form.baseSalary <= 0) missingFields.push("Salário Base");
+
+          if (missingFields.length > 0) {
+              return showAlert({ 
+                  title: "Pendências do eSocial", 
+                  message: `Para salvar um colaborador CLT, os seguintes dados são obrigatórios por lei: ${missingFields.join(', ')}.`, 
+                  type: "WARNING" 
+              });
+          }
+          
+          const cpfClean = form.documentCpf?.replace(/\D/g, '');
+          if (cpfClean && cpfClean.length !== 11) {
+              return showAlert({ title: "CPF Inválido", message: "O CPF informado deve conter 11 dígitos numéricos.", type: "WARNING" });
+          }
+      }
+      // ------------------------------------------------------------------------
+
       const userToSave = { 
           ...form, 
           customRoleId: form.customRoleId || undefined,
@@ -139,6 +164,8 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
       </button>
   );
 
+  const isEsocialObligatory = ['CLT', 'TEMPORARY', 'INTERN'].includes(form.contractType || 'CLT');
+
   return (
     <Modal 
         isOpen={isOpen} 
@@ -149,8 +176,6 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
         onSave={handleSubmit}
     >
         <div className="space-y-6 pb-10">
-            
-            {/* VARIANT ACCESS: Apenas Login e Senha */}
             {variant === 'ACCESS' && (
                 <div className="space-y-6">
                     <div>
@@ -197,10 +222,8 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                 </div>
             )}
 
-            {/* VARIANT RH: Formulário Completo com Abas */}
             {variant === 'RH' && (
                 <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Sidebar de Navegação */}
                     <div className="w-full lg:w-64 flex flex-col gap-2 shrink-0">
                         {renderTabButton('GENERAL', 'Geral', <UserIcon size={16}/>)}
                         {renderTabButton('PERSONAL', 'Dados Pessoais', <FileText size={16}/>)}
@@ -220,23 +243,25 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                         )}
                     </div>
 
-                    {/* Conteúdo das Abas */}
                     <div className="flex-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm min-h-[400px]">
                         
                         {activeTab === 'GENERAL' && (
                             <div className="space-y-6 animate-fade-in">
-                                <h4 className="text-sm font-black text-slate-800 uppercase border-b pb-2 mb-4">Informações Gerais</h4>
+                                <div className="flex justify-between items-center border-b pb-2 mb-4">
+                                    <h4 className="text-sm font-black text-slate-800 uppercase">Informações Gerais</h4>
+                                    {isEsocialObligatory && <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-1 rounded-full flex items-center gap-1"><Shield size={12}/> eSocial Ativo</span>}
+                                </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="md:col-span-2">
                                         <label className="block text-xs font-bold mb-1 text-slate-600">Matrícula</label>
                                         <input readOnly className="w-full border p-2.5 rounded-xl text-sm bg-slate-50 font-mono text-blue-700 font-bold" value={form.registrationNumber || ''} />
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Nome Completo *</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Nome Completo <span className="text-red-500">*</span></label>
                                         <input required className="w-full border p-2.5 rounded-xl text-sm" placeholder="Ex: Maria Silva" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">CPF</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">CPF {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" placeholder="000.000.000-00" value={form.documentCpf} onChange={e => setForm({...form, documentCpf: e.target.value})} />
                                     </div>
                                     <div>
@@ -252,7 +277,7 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         <input className="w-full border p-2.5 rounded-xl text-sm" placeholder="Ex: Cozinha, Salão" value={form.department} onChange={e => setForm({...form, department: e.target.value})} />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Cargo / Função (RH)</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Cargo / Função (CBO) {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <select 
                                             className="w-full border p-2.5 rounded-xl text-sm bg-white" 
                                             value={form.hrJobRoleId || ''} 
@@ -267,7 +292,7 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                                 });
                                             }}
                                         >
-                                            <option value="">Selecione...</option>
+                                            <option value="">Selecione o Cargo Oficial...</option>
                                             {state.hrJobRoles.map(role => (
                                                 <option key={role.id} value={role.id}>{role.title} ({role.cboCode})</option>
                                             ))}
@@ -304,10 +329,12 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
 
                         {activeTab === 'PERSONAL' && (
                             <div className="space-y-6 animate-fade-in">
-                                <h4 className="text-sm font-black text-slate-800 uppercase border-b pb-2 mb-4">Dados Pessoais</h4>
+                                <div className="flex justify-between items-center border-b pb-2 mb-4">
+                                    <h4 className="text-sm font-black text-slate-800 uppercase">Dados Pessoais</h4>
+                                </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Data de Nascimento</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Data de Nascimento {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input type="date" className="w-full border p-2.5 rounded-xl text-sm" value={form.birthDate ? new Date(form.birthDate).toISOString().split('T')[0] : ''} onChange={e => setForm({...form, birthDate: e.target.value ? new Date(e.target.value) : undefined})} />
                                     </div>
                                     <div>
@@ -358,7 +385,7 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Nome da Mãe</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Nome da Mãe {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" value={form.mothersName || ''} onChange={e => setForm({...form, mothersName: e.target.value})} />
                                     </div>
                                     <div>
@@ -400,15 +427,15 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                 <h4 className="text-sm font-black text-slate-800 uppercase border-b pb-2 mb-4">Endereço Residencial</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                                     <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">CEP</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">CEP {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" placeholder="00000-000" value={form.addressZip || ''} onChange={e => setForm({...form, addressZip: e.target.value})} />
                                     </div>
                                     <div className="md:col-span-4">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Rua / Logradouro</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Rua / Logradouro {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" value={form.addressStreet || ''} onChange={e => setForm({...form, addressStreet: e.target.value})} />
                                     </div>
                                     <div className="md:col-span-1">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Número</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Número {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" value={form.addressNumber || ''} onChange={e => setForm({...form, addressNumber: e.target.value})} />
                                     </div>
                                     <div className="md:col-span-2">
@@ -420,11 +447,11 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         <input className="w-full border p-2.5 rounded-xl text-sm" value={form.addressNeighborhood || ''} onChange={e => setForm({...form, addressNeighborhood: e.target.value})} />
                                     </div>
                                     <div className="md:col-span-4">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Cidade</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Cidade {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" value={form.addressCity || ''} onChange={e => setForm({...form, addressCity: e.target.value})} />
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Estado (UF)</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Estado (UF) {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input className="w-full border p-2.5 rounded-xl text-sm" maxLength={2} value={form.addressState || ''} onChange={e => setForm({...form, addressState: e.target.value.toUpperCase()})} />
                                     </div>
                                 </div>
@@ -446,7 +473,7 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Data de Admissão</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Data de Admissão {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input type="date" className="w-full border p-2.5 rounded-xl text-sm" value={form.hireDate ? new Date(form.hireDate).toISOString().split('T')[0] : ''} onChange={e => setForm({...form, hireDate: e.target.value ? new Date(e.target.value) : undefined})} />
                                     </div>
                                     <div>
@@ -460,7 +487,7 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-slate-600">Salário Base (R$)</label>
+                                        <label className="block text-xs font-bold mb-1 text-slate-600">Salário Base (R$) {isEsocialObligatory && <span className="text-red-500">*</span>}</label>
                                         <input type="number" step="0.01" className="w-full border p-2.5 rounded-xl text-sm font-bold" value={form.baseSalary} onChange={e => setForm({...form, baseSalary: parseFloat(e.target.value)})} />
                                     </div>
                                     <div>
@@ -564,7 +591,6 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                 <h4 className="text-sm font-black text-slate-800 uppercase border-b pb-2 mb-4">Gerar e Gerenciar Contrato</h4>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Gerar Contrato */}
                                     <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 md:col-span-2">
                                         <h5 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Printer size={16}/> Gerar Minuta</h5>
                                         <div className="space-y-4">
@@ -615,7 +641,6 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({ isOpen, onClose,
                                         </div>
                                     </div>
 
-                                    {/* Upload Contrato Assinado */}
                                     <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 md:col-span-2">
                                         <h5 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><FileSignature size={16}/> Contrato Assinado</h5>
                                         

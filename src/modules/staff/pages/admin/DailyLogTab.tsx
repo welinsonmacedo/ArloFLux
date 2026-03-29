@@ -3,11 +3,11 @@ import { useStaff } from '@/core/context/StaffContext';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { Button } from '@/modules/common/components/Button';
 import { TimeEntry } from '@/types';
-import { Search, Calendar, Plus, Upload, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { Search, Calendar, Plus, Upload, ChevronDown, ChevronUp, Printer, ArrowRight } from 'lucide-react';
 import { TimeEntryModal } from '@/modules/common/components/modals/TimeEntryModal';
 import { SummaryModal } from '@/modules/common/components/modals/SummaryModal';
 import { ImportAFDModal } from '@/modules/common/components/modals/ImportAFDModal';
-import DOMPurify from 'dompurify';
+import { printHtml } from '@/core/print/printHelper';
 
 export const DailyLogTab: React.FC = () => {
     const { state: staffState } = useStaff();
@@ -25,20 +25,21 @@ export const DailyLogTab: React.FC = () => {
     
     const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
     
-    const pointClosingDay = staffState.legalSettings?.pointClosingDay || 30;
+    const settings = staffState.legalSettings;
+    const pointClosingDay = settings?.pointClosingDay || 30;
+    const isBankOfHours = settings?.overtimePolicy === 'BANK_OF_HOURS';
+    const deductDelays = settings?.deductDelaysFromOvertime || false;
 
     const isDateInPayrollMonth = (date: Date, filterMonthStr: string) => {
         const [yearStr, monthStr] = filterMonthStr.split('-');
         const pYear = parseInt(yearStr, 10);
         const pMonth = parseInt(monthStr, 10);
 
-        // Use UTC methods to avoid timezone offset issues since entryDate is parsed from 'YYYY-MM-DD'
         const entryYear = date.getUTCFullYear();
         const entryMonth = date.getUTCMonth() + 1;
         const entryDay = date.getUTCDate();
 
         const isCurrentMonth = entryYear === pYear && entryMonth === pMonth && entryDay <= pointClosingDay;
-        
         const prevMonth = pMonth === 1 ? 12 : pMonth - 1;
         const prevYear = pMonth === 1 ? pYear - 1 : pYear;
         const isPrevMonth = entryYear === prevYear && entryMonth === prevMonth && entryDay > pointClosingDay;
@@ -46,131 +47,167 @@ export const DailyLogTab: React.FC = () => {
         return isCurrentMonth || isPrevMonth;
     };
 
-    // Filter entries by payroll month
     const monthlyEntries = staffState.timeEntries.filter(entry => {
         return isDateInPayrollMonth(entry.entryDate, filterMonth);
     });
 
-    // Group by Staff
     const staffSummaries = staffState.users
         .filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()))
         .map(user => {
             const userEntries = monthlyEntries.filter(e => e.staffId === user.id);
             
-            // Calculate totals
             let totalHours = 0;
-            let overtime = 0;
-            let missing = 0;
+            let rawOvertime = 0;
+            let rawMissing = 0;
             
-            // Simple calculation logic (can be improved with shift details)
             const shift = staffState.shifts.find(s => s.id === user.shiftId);
-            const dailyTarget = shift ? (new Date(`1970-01-01T${shift.endTime}`).getTime() - new Date(`1970-01-01T${shift.startTime}`).getTime()) / 3600000 - (shift.breakMinutes / 60) : 8;
+            let dailyTarget = 8; 
+            let breakHours = 1;
+            
+            if (shift && shift.startTime && shift.endTime) {
+                const sTime = new Date(`1970-01-01T${shift.startTime}Z`);
+                const eTime = new Date(`1970-01-01T${shift.endTime}Z`);
+                let diff = (eTime.getTime() - sTime.getTime()) / 3600000;
+                if (diff < 0) diff += 24; 
+                breakHours = (shift.breakMinutes || 0) / 60;
+                dailyTarget = diff - breakHours;
+            }
 
             userEntries.forEach(entry => {
-                // A fins somatórios vale o ponto corrigido (ignora os que foram marcados como CORRECTED)
                 if ((entry.status as any) === 'CORRECTED') return;
 
                 if (entry.clockIn && entry.clockOut) {
-                    const worked = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000;
+                    let worked = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000;
+                    
+                    if (entry.breakStart && entry.breakEnd) {
+                        worked -= (new Date(entry.breakEnd).getTime() - new Date(entry.breakStart).getTime()) / 3600000;
+                    } else {
+                        worked -= breakHours;
+                    }
+                    
                     totalHours += worked;
                     const diff = worked - dailyTarget;
-                    if (diff > 0) overtime += diff;
-                    else missing += Math.abs(diff);
+                    
+                    if (diff > 0.16) rawOvertime += diff;
+                    else if (diff < -0.16) rawMissing += Math.abs(diff);
                 } else if ((entry.status as any) === 'ABSENT') {
-                    // Falta injustificada conta como o dia todo perdido
-                    missing += dailyTarget;
+                    rawMissing += dailyTarget;
                 }
             });
+
+            let finalOvertime = rawOvertime;
+            let finalMissing = rawMissing;
+            
+            if (deductDelays) {
+                const net = finalOvertime - finalMissing;
+                if (net >= 0) {
+                    finalOvertime = net;
+                    finalMissing = 0;
+                } else {
+                    finalOvertime = 0;
+                    finalMissing = Math.abs(net);
+                }
+            }
+
+            const bankChange = finalOvertime - finalMissing;
 
             return {
                 user,
                 entries: userEntries.sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()),
                 totalHours,
-                overtime,
-                missing,
-                bankBalance: user.bankHoursBalance || 0
+                rawOvertime,
+                rawMissing,
+                finalOvertime,
+                finalMissing,
+                bankChange,
+                bankBalance: user.bankHoursBalance || 0,
+                dailyTarget,
+                breakHours
             };
         });
 
     const handlePrintEspelho = (staffId: string, month: string) => {
-        const staff = staffState.users.find(u => u.id === staffId);
-        if (!staff) return;
+        const summary = staffSummaries.find(s => s.user.id === staffId);
+        if (!summary) return;
 
-        const entries = staffState.timeEntries
-            .filter(e => e.staffId === staffId && isDateInPayrollMonth(e.entryDate, month))
-            .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
+        const staff = summary.user;
+        const entries = summary.entries;
+        const dailyTarget = summary.dailyTarget;
+        const breakHours = summary.breakHours;
 
-        const formatDate = (d: Date) => new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+        const formatDate = (d: Date) => {
+            const date = new Date(d);
+            const day = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+            const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' });
+            return `${day}<br/><span style="font-size: 9px; color: #666; text-transform: capitalize;">${weekday}</span>`;
+        };
         const formatTime = (d?: Date) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
 
-        // Calculate totals for the printout
-        let totalWorked = 0;
-        let totalOvertime = 0;
-        let totalMissing = 0;
-        const shift = staffState.shifts.find(s => s.id === staff.shiftId);
-        const dailyTarget = shift ? (new Date(`1970-01-01T${shift.endTime}`).getTime() - new Date(`1970-01-01T${shift.startTime}`).getTime()) / 3600000 - (shift.breakMinutes / 60) : 8;
-
-        entries.forEach(entry => {
-            if ((entry.status as any) === 'CORRECTED') return;
-
-            if (entry.clockIn && entry.clockOut) {
-                const worked = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000;
-                totalWorked += worked;
-                const diff = worked - dailyTarget;
-                
-                if (diff > 0) {
-                    totalOvertime += diff;
-                } else if (diff < 0) {
-                    totalMissing += Math.abs(diff);
-                }
-            } else if ((entry.status as any) === 'ABSENT') {
-                totalMissing += dailyTarget;
-            }
-        });
-
-        // If deductDelaysFromOvertime is enabled, we adjust the totals
-        let finalOvertime = totalOvertime;
-        let finalMissing = totalMissing;
-        if (staffState.legalSettings?.deductDelaysFromOvertime) {
-            const deduction = Math.min(finalOvertime, finalMissing);
-            finalOvertime -= deduction;
-            finalMissing -= deduction;
+        let policySummaryHtml = '';
+        if (isBankOfHours) {
+            policySummaryHtml = `
+                <div class="summary-item">
+                    <strong>Horas Geradas p/ Banco</strong>
+                    ${summary.bankChange > 0 ? '+' : ''}${summary.bankChange.toFixed(2)}h
+                </div>
+                <div class="summary-item">
+                    <strong>Saldo Atual do Banco</strong>
+                    ${summary.bankBalance.toFixed(2)}h
+                </div>
+            `;
+        } else {
+            policySummaryHtml = `
+                <div class="summary-item">
+                    <strong>A Pagar em Folha</strong>
+                    ${summary.finalOvertime.toFixed(2)}h
+                </div>
+                <div class="summary-item">
+                    <strong>A Descontar em Folha</strong>
+                    ${summary.finalMissing.toFixed(2)}h
+                </div>
+            `;
         }
 
         const html = `
+            <!DOCTYPE html>
             <html>
                 <head>
                     <title>Espelho de Ponto - ${staff.name}</title>
                     <style>
-                        body { font-family: sans-serif; padding: 40px; color: #333; }
-                        h1 { font-size: 24px; margin-bottom: 5px; }
-                        .header { margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
-                        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+                        body { font-family: sans-serif; padding: 30px; color: #333; }
+                        h1 { font-size: 18px; margin-bottom: 5px; text-transform: uppercase; }
+                        .header { margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; text-align: center; }
+                        th, td { border: 1px solid #ddd; padding: 4px 2px; font-size: 10px; }
                         th { background: #f5f5f5; font-weight: bold; }
-                        .corrected { color: #999; text-decoration: line-through; }
-                        .summary { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 40px; border: 1px solid #eee; }
-                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; }
+                        .corrected { color: #999; text-decoration: line-through; background: #fafafa; }
+                        .summary { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #eee; }
+                        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; }
                         .summary-item { font-size: 14px; }
-                        .summary-item strong { display: block; font-size: 10px; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+                        .summary-item strong { display: block; font-size: 9px; text-transform: uppercase; color: #666; margin-bottom: 4px; }
                         .footer { margin-top: 50px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
                         .signature { border-top: 1px solid #000; padding-top: 10px; text-align: center; font-size: 12px; }
-                        .manual { color: #d97706; font-weight: bold; }
+                        .manual { color: #1d4ed8; font-weight: bold; }
                         .absence { color: #dc2626; font-weight: bold; }
+                        .green { color: #16a34a; }
+                        .red { color: #dc2626; }
                     </style>
                 </head>
                 <body>
                     <div class="header">
-                        <h1>Espelho de Ponto Individual</h1>
-                        <p>Referência: ${month}</p>
+                        <div>
+                            <h1>Espelho de Ponto Individual</h1>
+                            <div style="font-size: 14px; font-weight: bold; margin-top: 10px;">${staff.name.toUpperCase()}</div>
+                            <div style="font-size: 12px; color: #555;">CPF: ${staff.documentCpf || '-'}</div>
+                            <div style="font-size: 12px; color: #555;">Cargo: ${staff.role || '-'} - Departamento: ${staff.department || '-'}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 12px;"><strong>Status:</strong> ${staff.status} • ${entries.length} registros</div>
+                            <div style="font-size: 12px; margin-top: 5px;"><strong>Período:</strong> ${month}</div>
+                        </div>
                     </div>
-                    <div class="info-grid">
-                        <div><strong>Colaborador:</strong> ${staff.name}</div>
-                        <div><strong>CPF:</strong> ${staff.documentCpf || '-'}</div>
-                        <div><strong>Cargo:</strong> ${staff.department || '-'}</div>
-                        <div><strong>Empresa:</strong> ${restState.businessInfo?.restaurantName || 'Minha Empresa'}</div>
-                    </div>
+
+                    <h3 style="font-size: 12px; margin-bottom: 10px;">REGISTROS DIÁRIOS</h3>
                     <table>
                         <thead>
                             <tr>
@@ -179,95 +216,103 @@ export const DailyLogTab: React.FC = () => {
                                 <th>Início Int.</th>
                                 <th>Fim Int.</th>
                                 <th>Saída</th>
-                                <th>Tipo/Status</th>
+                                <th>Trabalhado</th>
+                                <th>Extras</th>
+                                <th>Faltas</th>
+                                <th>Origem</th>
                                 <th>Justificativa</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${entries.map(e => `
-                                <tr class="${e.status === 'CORRECTED' ? 'corrected' : ''}">
+                            ${entries.map(e => {
+                                let worked = 0;
+                                let diff = 0;
+                                let extras = 0;
+                                let faltas = 0;
+                                
+                                if (e.clockIn && e.clockOut) {
+                                    worked = (new Date(e.clockOut).getTime() - new Date(e.clockIn).getTime()) / 3600000;
+                                    if (e.breakStart && e.breakEnd) {
+                                        worked -= (new Date(e.breakEnd).getTime() - new Date(e.breakStart).getTime()) / 3600000;
+                                    } else {
+                                        worked -= breakHours;
+                                    }
+                                    diff = worked - dailyTarget;
+                                    if (diff > 0.16) extras = diff;
+                                    else if (diff < -0.16) faltas = Math.abs(diff);
+                                } else if ((e.status as any) === 'ABSENT') {
+                                    faltas = dailyTarget;
+                                }
+
+                                const isCorrected = (e.status as any) === 'CORRECTED';
+                                const isManual = e.entryType === 'MANUAL';
+                                const isAbsent = (e.status as any) === 'ABSENT';
+                                
+                                let originText = isManual ? '<span class="manual">MANUAL ✎</span>' : 'DIGITAL';
+                                if(isAbsent) originText = '-';
+
+                                let justificationText = '<span style="color: #16a34a; font-size: 12px;">✔</span>';
+                                if (isManual && e.justification) {
+                                    justificationText = `<span style="font-size: 9px; color: #333;">Corrigido: ${e.justification}</span>`;
+                                } else if (isAbsent) {
+                                    justificationText = '<span class="absence">FALTA</span>';
+                                } else if (isCorrected) {
+                                    justificationText = '<span style="font-size: 9px; color: #999;">Desconsiderado</span>';
+                                }
+
+                                return `
+                                <tr class="${isCorrected ? 'corrected' : ''}">
                                     <td>${formatDate(e.entryDate)}</td>
                                     <td>${formatTime(e.clockIn)}</td>
                                     <td>${formatTime(e.breakStart)}</td>
                                     <td>${formatTime(e.breakEnd)}</td>
                                     <td>${formatTime(e.clockOut)}</td>
-                                    <td>
-                                        ${e.status === 'ABSENT' ? '<span class="absence">FALTA</span>' : 
-                                          e.status === 'JUSTIFIED_ABSENCE' ? 'FALTA JUST.' : 
-                                          e.entryType === 'MANUAL' ? '<span class="manual">MANUAL</span>' : 
-                                          e.status === 'CORRECTED' ? 'CORRIGIDO' : 'NORMAL'}
-                                    </td>
-                                    <td>${e.justification || '-'}</td>
+                                    <td style="font-weight: bold;">${worked > 0 ? worked.toFixed(1) + 'h' : '0.0h'}</td>
+                                    <td class="${extras > 0 ? 'green' : ''}">${extras > 0 ? '+' + extras.toFixed(1) + 'h' : '0.0h'}</td>
+                                    <td class="${faltas > 0 ? 'red' : ''}">${faltas > 0 ? '-' + faltas.toFixed(1) + 'h' : '-0.0h'}</td>
+                                    <td>${originText}</td>
+                                    <td>${justificationText}</td>
                                 </tr>
-                            `).join('')}
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
 
                     <div class="summary">
+                        <h3 style="margin-top: 0; font-size: 14px;">Resumo Baseado nas Regras do Mês</h3>
+                        <p style="font-size: 11px; color: #666; margin-bottom: 15px;">
+                            Política: ${isBankOfHours ? 'Banco de Horas' : 'Pagamento em Folha'} | Abater Atrasos: ${deductDelays ? 'Sim' : 'Não'}
+                        </p>
                         <div class="summary-grid">
                             <div class="summary-item">
-                                <strong>Total Horas Mensal</strong>
-                                ${(totalWorked || 0).toFixed(2)}h
+                                <strong>Horas Trabalhadas</strong>
+                                ${(summary.totalHours || 0).toFixed(2)}h
                             </div>
                             <div class="summary-item">
-                                <strong>Total Horas Extras</strong>
-                                ${(finalOvertime || 0).toFixed(2)}h
+                                <strong>Extras (Bruto)</strong>
+                                ${(summary.rawOvertime || 0).toFixed(2)}h
                             </div>
                             <div class="summary-item">
-                                <strong>Total Faltas/Atrasos</strong>
-                                ${(finalMissing || 0).toFixed(2)}h
+                                <strong>Faltas (Bruto)</strong>
+                                ${(summary.rawMissing || 0).toFixed(2)}h
                             </div>
-                            ${staffState.legalSettings?.overtimePolicy === 'BANK_OF_HOURS' ? `
-                                <div class="summary-item">
-                                    <strong>Saldo Banco (Mês)</strong>
-                                    ${((finalOvertime || 0) - (finalMissing || 0)).toFixed(2)}h
-                                </div>
-                                <div class="summary-item">
-                                    <strong>Saldo Acumulado</strong>
-                                    ${(staff.bankHoursBalance || 0).toFixed(2)}h
-                                </div>
-                            ` : ''}
+                            ${policySummaryHtml}
                         </div>
                     </div>
 
                     <div class="footer">
-                        <div class="signature">
-                            Assinatura do Colaborador
-                        </div>
-                        <div class="signature">
-                            Assinatura do Empregador
-                        </div>
+                        <div class="signature">Assinatura do Colaborador</div>
+                        <div class="signature">Assinatura do Empregador (${restState.businessInfo?.restaurantName || 'Empresa'})</div>
                     </div>
-                    <script>window.onload = function() { window.print(); }</script>
                 </body>
             </html>
         `;
 
-        const cleanHtml = DOMPurify.sanitize(html);
-
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        document.body.appendChild(iframe);
-
-        const doc = iframe.contentWindow?.document || iframe.contentDocument;
-        if (doc) {
-            doc.open();
-            doc.write(cleanHtml);
-            doc.close();
-            setTimeout(() => {
-                if (document.body.contains(iframe)) document.body.removeChild(iframe);
-            }, 2000);
-        }
+        printHtml(html);
     };
 
     const handleNewEntry = () => {
         setEntryToEdit(null);
-        // If expanded, pre-select that staff
         if (expandedStaffId) setSelectedStaffId(expandedStaffId);
         setIsEntryModalOpen(true);
     };
@@ -294,47 +339,67 @@ export const DailyLogTab: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-                {staffSummaries.map(({ user, entries, totalHours, overtime, missing, bankBalance }) => (
+                {staffSummaries.map(({ user, entries, totalHours, rawOvertime, rawMissing, finalOvertime, finalMissing, bankChange, bankBalance }) => (
                     <div key={user.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div 
-                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                            className="p-4 flex flex-col xl:flex-row xl:items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors gap-4"
                             onClick={() => setExpandedStaffId(expandedStaffId === user.id ? null : user.id)}
                         >
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 flex-shrink-0">
                                 <div className="w-10 h-10 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center font-bold">{user.name.charAt(0)}</div>
                                 <div>
                                     <h3 className="font-bold text-slate-800">{user.name}</h3>
                                     <p className="text-xs text-slate-500">{user.role} • {entries.length} registros</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-6">
-                                <div className="text-right hidden md:block">
-                                    <p className="text-[10px] uppercase font-bold text-slate-400">Horas Totais</p>
+
+                            <div className="flex items-center gap-6 flex-wrap xl:flex-nowrap ml-14 xl:ml-0">
+                                <div className="text-right">
+                                    <p className="text-[10px] uppercase font-bold text-slate-400">Trabalhadas</p>
                                     <p className="font-mono font-bold text-slate-700">{(totalHours || 0).toFixed(1)}h</p>
                                 </div>
-                                <div className="text-right hidden md:block">
-                                    <p className="text-[10px] uppercase font-bold text-green-600">Extras</p>
-                                    <p className="font-mono font-bold text-green-700">+{(overtime || 0).toFixed(1)}h</p>
+                                
+                                <div className="text-right">
+                                    <p className="text-[10px] uppercase font-bold text-slate-400">Bruto (Ext/Fal)</p>
+                                    <p className="font-mono text-[11px] text-slate-500 mt-1">
+                                        <span className="text-green-600">+{rawOvertime.toFixed(1)}h</span> / <span className="text-red-500">-{rawMissing.toFixed(1)}h</span>
+                                    </p>
                                 </div>
-                                <div className="text-right hidden md:block">
-                                    <p className="text-[10px] uppercase font-bold text-red-500">Faltas</p>
-                                    <p className="font-mono font-bold text-red-600">-{(missing || 0).toFixed(1)}h</p>
+
+                                <ArrowRight size={14} className="text-slate-300 hidden md:block" />
+
+                                <div className="text-right bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                                    <p className="text-[10px] uppercase font-black text-blue-600">
+                                        {isBankOfHours ? 'Resultado p/ Banco' : 'Resultado p/ Folha'}
+                                    </p>
+                                    {isBankOfHours ? (
+                                        <p className={`font-mono font-black ${bankChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {bankChange > 0 ? '+' : ''}{bankChange.toFixed(1)}h
+                                        </p>
+                                    ) : (
+                                        <p className="font-mono font-black text-slate-700">
+                                            <span className="text-green-600">+{finalOvertime.toFixed(1)}h</span> 
+                                            <span className="text-gray-300 mx-1">|</span> 
+                                            <span className="text-red-600">-{finalMissing.toFixed(1)}h</span>
+                                        </p>
+                                    )}
                                 </div>
-                                <div className="text-right hidden md:block">
-                                    <p className="text-[10px] uppercase font-bold text-blue-500">Banco</p>
-                                    <p className="font-mono font-bold text-blue-600">{(bankBalance || 0).toFixed(1)}h</p>
+
+                                <div className="text-right pl-2">
+                                    <p className="text-[10px] uppercase font-bold text-purple-500">Saldo Atual (Banco)</p>
+                                    <p className="font-mono font-bold text-purple-600">{(bankBalance || 0).toFixed(1)}h</p>
                                 </div>
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handlePrintEspelho(user.id, filterMonth);
-                                    }}
-                                    className="p-2 text-slate-500 hover:bg-slate-200 rounded-lg transition-all"
-                                    title="Imprimir Espelho"
-                                >
-                                    <Printer size={20}/>
-                                </button>
-                                {expandedStaffId === user.id ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handlePrintEspelho(user.id, filterMonth); }}
+                                        className="p-2 text-slate-500 hover:bg-slate-200 rounded-lg transition-all"
+                                        title="Imprimir Espelho"
+                                    >
+                                        <Printer size={20}/>
+                                    </button>
+                                    {expandedStaffId === user.id ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+                                </div>
                             </div>
                         </div>
 

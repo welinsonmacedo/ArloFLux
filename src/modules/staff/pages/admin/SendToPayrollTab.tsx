@@ -1,246 +1,93 @@
-import React, { useState, useEffect } from 'react';
+// src/modules/staff/pages/admin/SendToPayrollTab.tsx
+import React, { useState } from 'react';
 import { useStaff } from '@/core/context/StaffContext';
 import { useUI } from '@/core/context/UIContext';
 import { Button } from '@/modules/common/components/Button';
-import { TimeEntry } from '@/types';
-import { ArrowRight, Edit } from 'lucide-react';
-import { SummaryModal } from '@/modules/common/components/modals/SummaryModal';
+import { Send, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const SendToPayrollTab: React.FC = () => {
-    const { state: staffState, addPayrollEntry, deletePayrollEntry } = useStaff();
-    const { showAlert } = useUI();
+    const { state: staffState, exportPointsToPayroll } = useStaff();
+    const { showAlert, showConfirm } = useUI();
+    const [month, setMonth] = useState(new Date().getMonth().toString());
+    const [year, setYear] = useState(new Date().getFullYear().toString());
+    const [loading, setLoading] = useState(false);
 
-    const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-    const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
-    const [summary, setSummary] = useState({ overtime: 0, missingHours: 0, bankHours: 0 });
-    const [monthlyEntries, setMonthlyEntries] = useState<TimeEntry[]>([]);
-    const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+    // Verifica se há pendências no mês selecionado
+    const hasPending = staffState.timeEntries?.some(e => 
+        (e.status === 'PENDING' || e.status === 'NEEDS_CORRECTION') && 
+        new Date(e.entryDate).getMonth().toString() === month &&
+        new Date(e.entryDate).getFullYear().toString() === year
+    );
 
-    const existingEntry = staffState.payrollEntries.find(e => e.staffId === selectedStaffId && e.month === filterMonth);
-    const getStaffName = (id: string) => staffState.users.find(u => u.id === id)?.name || 'Desconhecido';
-
-    const pointClosingDay = staffState.legalSettings?.pointClosingDay || 30;
-
-    const isDateInPayrollMonth = (date: Date, filterMonthStr: string) => {
-        const [yearStr, monthStr] = filterMonthStr.split('-');
-        const pYear = parseInt(yearStr, 10);
-        const pMonth = parseInt(monthStr, 10);
-
-        // Use UTC methods to avoid timezone offset issues since entryDate is parsed from 'YYYY-MM-DD'
-        const entryYear = date.getUTCFullYear();
-        const entryMonth = date.getUTCMonth() + 1;
-        const entryDay = date.getUTCDate();
-
-        const isCurrentMonth = entryYear === pYear && entryMonth === pMonth && entryDay <= pointClosingDay;
-        
-        const prevMonth = pMonth === 1 ? 12 : pMonth - 1;
-        const prevYear = pMonth === 1 ? pYear - 1 : pYear;
-        const isPrevMonth = entryYear === prevYear && entryMonth === prevMonth && entryDay > pointClosingDay;
-
-        return isCurrentMonth || isPrevMonth;
-    };
-
-    const [yearStr, monthStr] = filterMonth.split('-');
-    const pYear = parseInt(yearStr, 10);
-    const pMonth = parseInt(monthStr, 10) - 1;
-    const isPayrollClosed = staffState.closedPayrolls.some(cp => cp.month === pMonth && cp.year === pYear);
-
-    useEffect(() => {
-        if (!selectedStaffId) {
-            setMonthlyEntries([]);
-            setSummary({ overtime: 0, missingHours: 0, bankHours: 0 });
-            return;
+    const handleExport = async () => {
+        if (hasPending) {
+            return showAlert({ title: "Ação Bloqueada", message: "Resolva todas as pendências e divergências de ponto antes de enviar para a folha.", type: "WARNING" });
         }
 
-        const userEntries = staffState.timeEntries.filter(entry => 
-            entry.staffId === selectedStaffId && 
-            isDateInPayrollMonth(entry.entryDate, filterMonth)
-        );
-        setMonthlyEntries(userEntries.sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()));
-
-        let overtime = 0;
-        let missingHours = 0;
-
-        const user = staffState.users.find(u => u.id === selectedStaffId);
-        if (!user) return;
-
-        const shift = staffState.shifts.find(s => s.id === user.shiftId);
-        const targetHours = shift ? (new Date(`1970-01-01T${shift.endTime}`).getTime() - new Date(`1970-01-01T${shift.startTime}`).getTime()) / 3600000 - (shift.breakMinutes / 60) : 8;
-
-        userEntries.forEach(entry => {
-            if (entry.clockIn && entry.clockOut) {
-                let hoursWorked = ((new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000);
-                
-                if (entry.breakStart && entry.breakEnd) {
-                    const breakDuration = ((new Date(entry.breakEnd).getTime() - new Date(entry.breakStart).getTime()) / 3600000);
-                    hoursWorked -= breakDuration;
-                }
-
-                const balance = hoursWorked - targetHours;
-
-                if (balance > 0) {
-                    overtime += balance;
-                } else {
-                    missingHours += Math.abs(balance);
+        showConfirm({
+            title: "Consolidar e Enviar?",
+            message: "Isso irá calcular todas as horas extras, faltas e atrasos do período e enviar para a Folha de Pagamento. Deseja prosseguir?",
+            confirmText: "Enviar para Folha",
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    // Chama a função do contexto que faz o math e salva em rh_payroll_entries
+                    await exportPointsToPayroll(parseInt(month), parseInt(year));
+                    showAlert({ title: "Sucesso", message: "Horas consolidadas enviadas para a Folha de Pagamento com sucesso!", type: "SUCCESS" });
+                } catch (error: any) {
+                    showAlert({ title: "Erro", message: "Falha ao exportar: " + error.message, type: "ERROR" });
+                } finally {
+                    setLoading(false);
                 }
             }
         });
-
-        setSummary({
-            overtime,
-            missingHours,
-            bankHours: user.bankHoursBalance || 0
-        });
-
-    }, [selectedStaffId, filterMonth, staffState.timeEntries, staffState.users, staffState.shifts]);
-
-    const handleSendToPayroll = async () => {
-        if (!selectedStaffId) {
-            showAlert({ title: 'Atenção', message: 'Por favor, selecione um colaborador para enviar os dados.', type: 'WARNING' });
-            return;
-        }
-        try {
-            await addPayrollEntry({
-                staffId: selectedStaffId,
-                month: filterMonth,
-                overtimeHours: summary.overtime,
-                missingHours: summary.missingHours,
-            });
-            showAlert({ title: 'Enviado', message: `Dados de ${getStaffName(selectedStaffId)} enviados para a pré-folha com sucesso!`, type: 'SUCCESS' });
-        } catch (error) {
-            showAlert({ title: 'Erro', message: 'Não foi possível enviar os dados para a pré-folha.', type: 'ERROR' });
-        }
     };
 
     return (
-        <div className="space-y-6 p-6 bg-white rounded-3xl shadow-sm border border-slate-200">
-            <div className="flex flex-col md:flex-row gap-4">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 max-w-3xl">
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Exportar para Folha de Pagamento</h3>
+            <p className="text-sm text-gray-500 mb-6">Feche o período de ponto e envie os totalizadores (Horas Extras, Adicional Noturno, Faltas) para o cálculo automático da folha.</p>
+
+            <div className="flex gap-4 mb-8">
                 <div className="flex-1">
-                    <label className="text-xs font-bold text-slate-500">Colaborador</label>
-                    <select 
-                        className="w-full p-2 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-500" 
-                        value={selectedStaffId} 
-                        onChange={e => setSelectedStaffId(e.target.value)}
-                    >
-                        <option value="">Selecione um colaborador</option>
-                        {staffState.users.map(user => (
-                            <option key={user.id} value={user.id}>{user.name}</option>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Mês de Referência</label>
+                    <select className="w-full border-2 p-3 rounded-xl bg-slate-50" value={month} onChange={e => setMonth(e.target.value)}>
+                        {['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m, i) => (
+                            <option key={i} value={i}>{m}</option>
                         ))}
                     </select>
                 </div>
-                <div className="flex-1 md:flex-none">
-                     <label className="text-xs font-bold text-slate-500">Mês de Referência</label>
-                    <input 
-                        type="month" 
-                        className="w-full p-2 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-500" 
-                        value={filterMonth} 
-                        onChange={e => setFilterMonth(e.target.value)} 
-                    />
+                <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Ano</label>
+                    <select className="w-full border-2 p-3 rounded-xl bg-slate-50" value={year} onChange={e => setYear(e.target.value)}>
+                        <option value="2025">2025</option>
+                        <option value="2026">2026</option>
+                    </select>
                 </div>
             </div>
 
-            {selectedStaffId && (
-                <>
-                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">Resumo Mensal de {getStaffName(selectedStaffId)}</h3>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-green-50 p-4 rounded-xl border border-green-200">
-                                    <h4 className="font-bold text-green-800">Horas Extras (Mês)</h4>
-                                    <p className="text-2xl font-black text-green-600">{(summary.overtime || 0).toFixed(1)}h</p>
-                                </div>
-                                <div className="bg-red-50 p-4 rounded-xl border border-red-200">
-                                    <h4 className="font-bold text-red-800">Horas Faltantes (Mês)</h4>
-                                    <p className="text-2xl font-black text-red-600">{(summary.missingHours || 0).toFixed(1)}h</p>
-                                </div>
-                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
-                                    <h4 className="font-bold text-blue-800">Banco de Horas (Saldo)</h4>
-                                    <p className="text-2xl font-black text-blue-600">{(summary.bankHours || 0).toFixed(1)}h</p>
-                                </div>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                {isPayrollClosed ? (
-                                    <div className="text-sm text-red-500 font-bold flex items-center bg-red-50 px-4 py-2 rounded-xl">
-                                        Folha fechada. Não é possível alterar.
-                                    </div>
-                                ) : (
-                                    <>
-                                        <Button onClick={() => setIsSummaryModalOpen(true)} variant="secondary"><Edit size={16} className="mr-2"/> Editar Resumo</Button>
-                                        {existingEntry ? (
-                                            <Button onClick={async () => { await deletePayrollEntry(existingEntry.id); showAlert({ title: 'Sucesso', message: 'Dados removidos da pré-folha.', type: 'SUCCESS' }); }} variant="danger">Voltar para Edição</Button>
-                                        ) : (
-                                            <Button onClick={handleSendToPayroll} className="bg-green-600 hover:bg-green-700"><ArrowRight size={16} className="mr-2"/> Enviar para Pré-Folha</Button>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        </div>
+            {hasPending ? (
+                <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex gap-3 items-start mb-6">
+                    <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20}/>
+                    <div>
+                        <h4 className="font-bold text-red-800 text-sm">Existem pontos pendentes</h4>
+                        <p className="text-sm text-red-600 mt-1">Vá até a aba "Correção de Ponto" e trate todas as divergências deste período antes de exportar os totalizadores.</p>
                     </div>
-
-                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                         <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">Registros de Ponto</h3>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b">
-                                    <tr>
-                                        <th className="p-4">Data</th>
-                                        <th className="p-4">Entrada</th>
-                                        <th className="p-4">Saída Intervalo</th>
-                                        <th className="p-4">Retorno Intervalo</th>
-                                        <th className="p-4">Saída</th>
-                                        <th className="p-4">Total</th>
-                                        <th className="p-4 text-center">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {monthlyEntries.map(entry => {
-                                        let hours = '-';
-                                        if (entry.clockIn && entry.clockOut) {
-                                            let h = (new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 3600000;
-                                            if (entry.breakStart && entry.breakEnd) {
-                                                h -= (new Date(entry.breakEnd).getTime() - new Date(entry.breakStart).getTime()) / 3600000;
-                                            }
-                                            hours = (h || 0).toFixed(1);
-                                        }
-                                        return (
-                                            <tr key={entry.id}>
-                                                <td className="p-4 font-bold">{new Date(entry.entryDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
-                                                <td className="p-4 font-mono">{entry.clockIn ? new Date(entry.clockIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-                                                <td className="p-4 font-mono text-slate-500">{entry.breakStart ? new Date(entry.breakStart).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-                                                <td className="p-4 font-mono text-slate-500">{entry.breakEnd ? new Date(entry.breakEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-                                                <td className="p-4 font-mono">{entry.clockOut ? new Date(entry.clockOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-                                                <td className="p-4 font-black">{hours}h</td>
-                                                <td className="p-4 text-center">
-                                                    <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase border ${entry.status === 'APPROVED' ? 'bg-green-100 text-green-700 border-green-200' : (entry.status === 'REJECTED' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200')}`}>
-                                                        {entry.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        )
-                                    })}
-                                    {monthlyEntries.length === 0 && (
-                                        <tr><td colSpan={5} className="p-12 text-center text-gray-400 italic">Nenhum registro de ponto encontrado para este colaborador neste mês.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </>
+                </div>
+            ) : (
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex gap-3 items-center mb-6">
+                    <CheckCircle2 className="text-emerald-500 shrink-0" size={20}/>
+                    <div className="text-sm text-emerald-800 font-medium">Todos os pontos do período estão tratados e prontos para consolidação.</div>
+                </div>
             )}
 
-            <SummaryModal 
-                isOpen={isSummaryModalOpen} 
-                onClose={() => setIsSummaryModalOpen(false)} 
-                summary={summary}
-                onSave={(newSummary) => {
-                    setSummary(newSummary);
-                    showAlert({ title: 'Sucesso', message: 'Resumo atualizado localmente. Clique em Enviar para salvar.', type: 'SUCCESS' });
-                }}
-            />
+            <Button 
+                onClick={handleExport} 
+                disabled={hasPending || loading} 
+                className={`w-full py-4 text-white font-bold text-lg shadow-sm ${hasPending ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+            >
+                {loading ? 'Processando...' : <><Send className="mr-2" size={20}/> Consolidar e Enviar para Folha</>}
+            </Button>
         </div>
     );
 };

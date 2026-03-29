@@ -1,4 +1,4 @@
-
+// src/modules/staff/pages/admin/StaffPayroll.tsx
 import React, { useState, useEffect } from 'react';
 import { useStaff } from '@/core/context/StaffContext';
 import { useRestaurant } from '@/core/context/RestaurantContext'; 
@@ -64,22 +64,15 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
             setPayrollData(data.payroll);
             setIsClosed(data.isClosed);
             setClosedInfo(data.closedInfo);
-        } catch (e) {
-            showAlert({ title: "Erro", message: "Falha ao gerar folha.", type: "ERROR" });
+        } catch (error: any) {
+            showAlert({ title: "Erro na Folha", message: error.message || "Falha ao gerar folha.", type: "ERROR" });
+            setPayrollData([]);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => { loadData(); }, [month, year]);
-
-    useEffect(() => {
-        // Removido cálculo local para cumprir requisito de "tudo no backend"
-    }, [eventForm.type, staffState.eventTypes]);
-
-    useEffect(() => {
-        // Removido cálculo local para cumprir requisito de "tudo no backend"
-    }, [calcQty, calcMode, eventForm.staffId, staffState.users, eventForm.type, isJustified, deductDSR, staffState.eventTypes]);
 
     const handleClosePayroll = async () => {
         try {
@@ -269,7 +262,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
             </head>
             <body>
                 <div class="holerite">
-                    <!-- HEADER EMPRESA -->
                     <div class="header">
                         <div class="company-info">
                             <h1>${company?.restaurantName || theme.restaurantName || 'Nome da Empresa'}</h1>
@@ -282,7 +274,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                         </div>
                     </div>
 
-                    <!-- DADOS FUNCIONÁRIO -->
                     <div class="subheader">
                         <div class="field"><label>Código</label><span>${slip.staffId.slice(0,4).toUpperCase()}</span></div>
                         <div class="field"><label>Nome do Funcionário</label><span>${slip.staffName}</span></div>
@@ -290,7 +281,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                         <div class="field"><label>Admissão</label><span>${employee?.hireDate ? new Date(employee.hireDate).toLocaleDateString() : '-'}</span></div>
                     </div>
 
-                    <!-- CORPO (VENCIMENTOS/DESCONTOS) -->
                     <div class="body" style="min-height: 300px;">
                         <div class="table-row table-header">
                             <div class="col-code">Cód.</div>
@@ -300,7 +290,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                             <div class="col-val">Descontos</div>
                         </div>
 
-                        <!-- Salário Base -->
                         <div class="table-row">
                             <div class="col-code">001</div>
                             <div class="col-desc">SALÁRIO BASE</div>
@@ -309,7 +298,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                             <div class="col-val"></div>
                         </div>
 
-                        <!-- Horas Extras -->
                         ${overtimeTotal > 0 ? `
                         <div class="table-row">
                             <div class="col-code">002</div>
@@ -319,7 +307,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                             <div class="col-val"></div>
                         </div>` : ''}
 
-                        <!-- Benefícios e Eventos -->
                         ${(slip.benefitBreakdown || []).filter(b => b.value > 0).map((b, i) => `
                         <div class="table-row">
                             <div class="col-code">${100+i}</div>
@@ -356,7 +343,6 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                             <div class="col-val">${(e.value || 0).toFixed(2)}</div>
                         </div>`).join('')}
 
-                        <!-- Descontos Impostos -->
                         ${employeeTaxes.filter(t => t.value > 0).map((t, i) => `
                         <div class="table-row">
                             <div class="col-code">${900+i}</div>
@@ -367,14 +353,12 @@ export const StaffPayroll: React.FC<{ initialMonth?: number; initialYear?: numbe
                         </div>`).join('')}
                     </div>
 
-                    <!-- TOTAIS -->
                     <div class="totals">
                         <div class="total-box"><div class="label">Total Vencimentos</div><div class="val">${(slip.grossTotal || 0).toFixed(2)}</div></div>
                         <div class="total-box"><div class="label">Total Descontos</div><div class="val">${(slip.discounts || 0).toFixed(2)}</div></div>
                         <div class="total-box" style="border: 1px solid #000; padding: 0 10px; background: #fff;"><div class="label">Líquido a Receber</div><div class="val">R$ ${(slip.netTotal || 0).toFixed(2)}</div></div>
                     </div>
 
-                    <!-- RODAPÉ BASES -->
                     <div class="footer">
                         <div class="footer-grid">
                             <div class="field"><label>Salário Base</label><span>${(slip.baseSalary || 0).toFixed(2)}</span></div>

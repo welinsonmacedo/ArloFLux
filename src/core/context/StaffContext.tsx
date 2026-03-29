@@ -36,6 +36,7 @@ interface StaffState {
   warnings: StaffWarning[];
   closedPayrolls: ClosedPayroll[];
   isLoading: boolean;
+  exportPointsToPayroll: (month: number, year: number) => Promise<void>;
 }
 
 interface StaffContextType {
@@ -126,7 +127,7 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [state, setState] = useState<StaffState>({ 
     users: [], shifts: [], timeEntries: [], roles: [], hrJobRoles: [], taxes: [], benefits: [],
     legalSettings: null, inssBrackets: [], irrfBrackets: [], payrollEvents: [], recurringEvents: [], eventTypes: [], contractTemplates: [], payrollEntries: [],
-    thirteenthPayments: [], vacationPeriods: [], vacationSchedules: [], terminations: [], warnings: [], closedPayrolls: [], isLoading: true 
+    thirteenthPayments: [], vacationPeriods: [], vacationSchedules: [], terminations: [], warnings: [], closedPayrolls: [], isLoading: true ,exportPointsToPayroll: [] as any
   });
 
   const fetchData = useCallback(async () => {
@@ -217,7 +218,11 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               timeClock: settingsRes.data.time_clock || {
                   validationType: 'NONE',
                   maxDailyPunches: 4
-              }
+              },
+              esocialCnae: settingsRes.data.esocial_cnae,
+              esocialFap: Number(settingsRes.data.esocial_fap || 1.0000),
+              esocialRat: Number(settingsRes.data.esocial_rat || 1.00),
+              esocialFpas: settingsRes.data.esocial_fpas
           } : null;
 
           const inssBrackets = (inssRes.data || []).map((i: any) => ({
@@ -279,7 +284,8 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }));
 
           const mappedEventTypes = (eventTypesRes.data || []).map((e: any) => ({
-              id: e.id, name: e.name, operation: e.operation, isActive: e.is_active, calculationType: e.calculation_type || 'FIXED'
+              id: e.id, name: e.name, operation: e.operation, isActive: e.is_active, calculationType: e.calculation_type || 'FIXED',esocialCode: e.esocial_code, // NOVO
+              esocialNature: e.esocial_nature // NOVO
           }));
 
           const mappedContractTemplates = (contractTemplatesRes.data || []).map((t: any) => ({
@@ -453,10 +459,10 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // --- 13º SALÁRIO ---
-  const calculateThirteenth = async (staffId: string, year: number, installment: 1 | 2): Promise<ThirteenthPayment> => {
-      return await payrollService.calculateThirteenth(staffId, year, installment);
+ const calculateThirteenth = async (staffId: string, year: number, installment: 1 | 2): Promise<ThirteenthPayment> => {
+      if (!tenantId) throw new Error("Tenant ID não encontrado.");
+      return await payrollService.calculateThirteenth(tenantId, staffId, year, installment);
   };
-
   const saveThirteenth = async (payment: Partial<ThirteenthPayment>) => {
       if (!tenantId) return;
       const { error } = await supabase.from('rh_thirteenth_payments').insert({
@@ -476,8 +482,9 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // --- FÉRIAS ---
-  const calculateVacation = async (staffId: string, startDate: Date, days: number, soldDays: number): Promise<VacationSchedule> => {
-      return await payrollService.calculateVacation(staffId, startDate, days, soldDays);
+const calculateVacation = async (staffId: string, startDate: Date, days: number, soldDays: number): Promise<VacationSchedule> => {
+      if (!tenantId) throw new Error("Tenant ID não encontrado.");
+      return await payrollService.calculateVacation(tenantId, staffId, startDate, days, soldDays);
   };
 
   const saveVacationSchedule = async (schedule: Partial<VacationSchedule>) => {
@@ -517,10 +524,10 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // --- RESCISÃO ---
-  const calculateTermination = async (staffId: string, date: Date, reason: string, noticeType: string): Promise<Termination> => {
-      return await payrollService.calculateTermination(staffId, date, reason, noticeType);
+ const calculateTermination = async (staffId: string, date: Date, reason: string, noticeType: string): Promise<Termination> => {
+      if (!tenantId) throw new Error("Tenant ID não encontrado.");
+      return await payrollService.calculateTermination(tenantId, staffId, date, reason, noticeType);
   };
-
   const saveTermination = async (termination: Partial<Termination>) => {
       if (!tenantId) return;
       const { error } = await supabase.from('rh_terminations').insert({
@@ -707,6 +714,8 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           operation: eventType.operation,
           is_active: eventType.isActive,
           calculation_type: eventType.calculationType || 'FIXED',
+          esocial_code: eventType.esocialCode, // NOVO
+          esocial_nature: eventType.esocialNature, // NOVO
           created_by: currentUser?.auth_user_id
       });
       if (error) throw error;
@@ -719,6 +728,8 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           operation: eventType.operation,
           is_active: eventType.isActive,
           calculation_type: eventType.calculationType || 'FIXED',
+          esocial_code: eventType.esocialCode, // NOVO
+          esocial_nature: eventType.esocialNature, // NOVO
           updated_at: new Date().toISOString()
       }).eq('id', eventType.id);
       if (error) throw error;
@@ -772,7 +783,12 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           status: entry.status || 'APPROVED',
           original_entry_id: entry.originalEntryId,
           correction_reason: entry.correctionReason,
-          created_by: currentUser?.auth_user_id
+          created_by: currentUser?.auth_user_id,
+          time_clock: settings.timeClock,
+          esocial_cnae: settings.esocialCnae,
+          esocial_fap: settings.esocialFap,
+          esocial_rat: settings.esocialRat,
+          esocial_fpas: settings.esocialFpas
       }; 
       const { error } = await supabase.from('rh_time_entries').insert(payload); 
       if(error) throw error; 
@@ -795,12 +811,18 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    };
 
   // --- MÉTODOS DE CONFIGURAÇÃO LEGAL ---
+// --- MÉTODOS DE CONFIGURAÇÃO LEGAL ---
   const saveLegalSettings = async (settings: Partial<RhPayrollSetting>) => {
       if (!tenantId) return;
+      
       const payload = {
-          min_wage: settings.minWage, inss_ceiling: settings.inssCeiling,
-          irrf_dependent_deduction: settings.irrfDependentDeduction, fgts_rate: settings.fgtsRate,
-          valid_from: settings.validFrom, valid_until: settings.validUntil,
+          tenant_id: tenantId,
+          min_wage: settings.minWage, 
+          inss_ceiling: settings.inssCeiling,
+          irrf_dependent_deduction: settings.irrfDependentDeduction, 
+          fgts_rate: settings.fgtsRate,
+          valid_from: settings.validFrom, 
+          valid_until: settings.validUntil,
           vacation_days_entitlement: settings.vacationDaysEntitlement,
           vacation_sold_days_limit: settings.vacationSoldDaysLimit,
           thirteenth_min_months_worked: settings.thirteenthMinMonthsWorked,
@@ -818,44 +840,68 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           integrate_finance: settings.integrateFinance,
           time_clock: settings.timeClock
       };
-      const { error } = await supabase.rpc('save_payroll_settings', {
-          p_tenant_id: tenantId,
-          p_settings: payload
-      });
-      if (error) throw error;
+
+      // Verifica se já existe uma configuração salva para este tenant
+      const { data: existing } = await supabase.from('rh_payroll_settings')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+
+      if (existing?.id) {
+          // Atualiza a existente
+          const { error } = await supabase.from('rh_payroll_settings').update(payload).eq('id', existing.id);
+          if (error) throw error;
+      } else {
+          // Insere uma nova
+          const { error } = await supabase.from('rh_payroll_settings').insert(payload);
+          if (error) throw error;
+      }
+      
       fetchData();
   };
 
   const saveInssBrackets = async (brackets: RhInssBracket[]) => {
       if (!tenantId) return;
-      const payload = brackets.map(b => ({ 
-          min_value: b.minValue, 
-          max_value: b.maxValue, 
-          rate: b.rate, 
-          valid_from: b.validFrom 
-      }));
-      const { error } = await supabase.rpc('save_inss_brackets', {
-          p_tenant_id: tenantId,
-          p_brackets: payload
-      });
-      if (error) throw error;
+      
+      // Limpa as tabelas antigas deste tenant
+      await supabase.from('rh_inss_brackets').delete().eq('tenant_id', tenantId);
+
+      // Insere as novas diretamente na tabela
+      if (brackets.length > 0) {
+          const payload = brackets.map(b => ({ 
+              tenant_id: tenantId,
+              min_value: b.minValue, 
+              max_value: b.maxValue, 
+              rate: b.rate, 
+              valid_from: b.validFrom 
+          }));
+          const { error } = await supabase.from('rh_inss_brackets').insert(payload);
+          if (error) throw error;
+      }
+      
       fetchData();
   };
 
   const saveIrrfBrackets = async (brackets: RhIrrfBracket[]) => {
       if (!tenantId) return;
-      const payload = brackets.map(b => ({ 
-          min_value: b.minValue, 
-          max_value: b.maxValue, 
-          rate: b.rate, 
-          deduction: b.deduction, 
-          valid_from: b.validFrom 
-      }));
-      const { error } = await supabase.rpc('save_irrf_brackets', {
-          p_tenant_id: tenantId,
-          p_brackets: payload
-      });
-      if (error) throw error;
+      
+      // Limpa as tabelas antigas deste tenant
+      await supabase.from('rh_irrf_brackets').delete().eq('tenant_id', tenantId);
+
+      // Insere as novas diretamente na tabela
+      if (brackets.length > 0) {
+          const payload = brackets.map(b => ({ 
+              tenant_id: tenantId,
+              min_value: b.minValue, 
+              max_value: b.maxValue, 
+              rate: b.rate, 
+              deduction: b.deduction, 
+              valid_from: b.validFrom 
+          }));
+          const { error } = await supabase.from('rh_irrf_brackets').insert(payload);
+          if (error) throw error;
+      }
+      
       fetchData();
   };
 
@@ -1088,10 +1134,128 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       fetchData();
   };
 
-  const getPayroll = async (month: number, year: number): Promise<{ payroll: PayrollPreview[], isClosed: boolean, closedInfo?: ClosedPayroll }> => {
-      return await payrollService.getPayrollPreview(month, year);
+ const getPayroll = async (month: number, year: number): Promise<{ payroll: PayrollPreview[], isClosed: boolean, closedInfo?: ClosedPayroll }> => {
+      if (!tenantId) throw new Error("Tenant ID não encontrado.");
+      return await payrollService.getPayrollPreview(tenantId, month, year);
   };
+// --- CONSOLIDAÇÃO MATEMÁTICA DO PONTO ---
+  const exportPointsToPayroll = async (month: number, year: number) => {
+      if (!tenantId) throw new Error("Tenant ID não encontrado.");
+      if (!state.legalSettings) throw new Error("Configurações de ponto não encontradas. Vá em Configurações > Ponto.");
 
+      const settings = state.legalSettings;
+      const users = state.users;
+      
+      // Filtra apenas pontos APROVADOS do mês desejado
+      const entriesToProcess = state.timeEntries.filter(e => {
+          const d = new Date(e.entryDate);
+          return d.getMonth() === month && d.getFullYear() === year && e.status === 'APPROVED';
+      });
+
+      for (const user of users) {
+          const userEntries = entriesToProcess.filter(e => e.staffId === user.id);
+          if (userEntries.length === 0) continue;
+
+          let totalOvertimeHours = 0;
+          let totalMissingHours = 0;
+
+          const shift = state.shifts.find(s => s.id === user.shiftId);
+          let standardDailyHours = 8; 
+          let dailyBreakHours = 1;
+          
+          if (shift && shift.startTime && shift.endTime) {
+              const sTime = new Date(`1970-01-01T${shift.startTime}Z`);
+              const eTime = new Date(`1970-01-01T${shift.endTime}Z`);
+              let diff = (eTime.getTime() - sTime.getTime()) / 3600000;
+              if (diff < 0) diff += 24; // Lida com turnos da madrugada
+              dailyBreakHours = (shift.breakMinutes || 0) / 60;
+              standardDailyHours = diff - dailyBreakHours;
+          }
+
+          // 1. Calcula o Saldo Dia a Dia
+          userEntries.forEach(entry => {
+              if (entry.clockIn && entry.clockOut) {
+                  const cIn = new Date(entry.clockIn).getTime();
+                  const cOut = new Date(entry.clockOut).getTime();
+                  let workedHours = (cOut - cIn) / 3600000;
+                  
+                  // Desconta pausas
+                  if (entry.breakStart && entry.breakEnd) {
+                      const bIn = new Date(entry.breakStart).getTime();
+                      const bOut = new Date(entry.breakEnd).getTime();
+                      workedHours -= (bOut - bIn) / 3600000;
+                  } else {
+                      workedHours -= dailyBreakHours;
+                  }
+
+                  const diff = workedHours - standardDailyHours;
+
+                  // Tolerância mínima de 10 minutos (0.16h) para gerar extra ou atraso
+                  if (diff > 0.16) totalOvertimeHours += diff;
+                  else if (diff < -0.16) totalMissingHours += Math.abs(diff);
+
+              } else if (!entry.clockIn && !entry.clockOut) {
+                  // Falta Integral
+                  totalMissingHours += standardDailyHours;
+              }
+          });
+
+          // 2. REGRA: Descontar Atrasos do mesmo mês nas Horas Extras?
+          if (settings.deductDelaysFromOvertime) {
+              const net = totalOvertimeHours - totalMissingHours;
+              if (net >= 0) {
+                  totalOvertimeHours = net;
+                  totalMissingHours = 0;
+              } else {
+                  totalOvertimeHours = 0;
+                  totalMissingHours = Math.abs(net);
+              }
+          }
+
+          // 3. REGRA: Banco de Horas x Pagamento em Folha
+          let hoursToPay = 0;
+          let hoursToDeduct = totalMissingHours;
+          
+          if (settings.overtimePolicy === 'BANK_OF_HOURS') {
+              // Se for banco, tudo vai para o saldo do funcionário e zera no holerite
+              const bankChange = totalOvertimeHours - totalMissingHours;
+              hoursToPay = 0; 
+              hoursToDeduct = 0; 
+              
+              const newBank = Number(user.bankHoursBalance || 0) + bankChange;
+              // Atualiza o saldo no perfil do colaborador
+              await supabase.from('staff').update({ bank_hours_balance: newBank }).eq('id', user.id);
+          } else {
+              // Se for PAID_OVERTIME (Hora Extra Paga)
+              hoursToPay = totalOvertimeHours;
+              
+              // Verifica se a política de faltas manda descontar do salário
+              const deductUnjustified = settings.absenceLogic?.unjustified?.deduction ?? true;
+              if (!deductUnjustified) {
+                  hoursToDeduct = 0;
+              }
+          }
+
+          const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+          
+          // 4. Salva a consolidação exata para a Folha de Pagamento
+          const { data: existing } = await supabase.from('rh_payroll_entries')
+              .select('id').eq('tenant_id', tenantId).eq('staff_id', user.id).eq('month', monthStr).maybeSingle();
+
+          if (existing) {
+              await supabase.from('rh_payroll_entries').update({
+                  overtime_hours: hoursToPay,
+                  missing_hours: hoursToDeduct
+              }).eq('id', existing.id);
+          } else {
+              await supabase.from('rh_payroll_entries').insert({
+                  tenant_id: tenantId, staff_id: user.id, month: monthStr,
+                  overtime_hours: hoursToPay, missing_hours: hoursToDeduct
+              });
+          }
+      }
+      await fetchData();
+  };
   const closePayroll = async (month: number, year: number, integrateSalaries: boolean = false, integrateTaxes: boolean = false) => {
       if (!tenantId) return;
       const { payroll, isClosed } = await getPayroll(month, year);
@@ -1174,6 +1338,7 @@ export const StaffProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addTax, deleteTax, applyRegimeDefaults,
         addBenefit, deleteBenefit,
         addPayrollEvent, updatePayrollEvent, deletePayrollEvent, addPayrollEntry, deletePayrollEntry,
+        exportPointsToPayroll,
         addRecurringEvent, updateRecurringEvent, deleteRecurringEvent, generateRecurringEventsForMonth,
         addContractTemplate, updateContractTemplate, deleteContractTemplate, uploadSignedContract,
         calculateThirteenth, saveThirteenth, deleteThirteenth,

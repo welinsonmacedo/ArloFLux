@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -75,6 +74,9 @@ export const StaffSettings: React.FC = () => {
                 fgtsFinePercent: state.legalSettings.fgtsFinePercent || 40,
                 standardMonthlyHours: state.legalSettings.standardMonthlyHours || 220
             });
+            
+            const defaultTimeClock = { validationType: 'NONE', maxDailyPunches: 4, maxDistanceMeters: 100, restaurantLocation: { lat: 0, lng: 0 } };
+            
             setTimeTrackingForm({
                 timeTrackingMethod: state.legalSettings.timeTrackingMethod || 'PHYSICAL',
                 overtimePolicy: state.legalSettings.overtimePolicy || 'PAID_OVERTIME',
@@ -93,19 +95,24 @@ export const StaffSettings: React.FC = () => {
                     includeInThirteenth: true,
                     includeInVacation: true
                 },
-                timeClock: state.legalSettings.timeClock || {
-                    validationType: 'NONE',
-                    maxDailyPunches: 4
-                }
+                timeClock: { ...defaultTimeClock, ...(state.legalSettings.timeClock || {}) }
             });
         }
     }, [state.legalSettings]);
 
     const handleSaveTimeTracking = async () => {
-        if (!state.legalSettings) return showAlert({ title: "Erro", message: "Configure as tabelas legais primeiro.", type: "ERROR" });
+        // Criamos uma base caso o usuário ainda não tenha configurado as Tabelas Legais
+        const baseSettings = state.legalSettings || {
+            minWage: 1621, inssCeiling: 8475.55, irrfDependentDeduction: 189.59, fgtsRate: 8,
+            vacationDaysEntitlement: 30, vacationSoldDaysLimit: 10, thirteenthMinMonthsWorked: 1,
+            noticePeriodDays: 30, noticePeriodDaysPerYear: 3, noticePeriodMaxDays: 90, fgtsFinePercent: 40,
+            standardMonthlyHours: 220, integrateFinance: true,
+            validFrom: '2026-01-01'
+        };
+
         try {
             await saveLegalSettings({
-                ...state.legalSettings,
+                ...baseSettings,
                 timeTrackingMethod: timeTrackingForm.timeTrackingMethod as any,
                 overtimePolicy: timeTrackingForm.overtimePolicy as any,
                 deductDelaysFromOvertime: timeTrackingForm.deductDelaysFromOvertime,
@@ -121,10 +128,16 @@ export const StaffSettings: React.FC = () => {
     };
 
     const handleSaveCalcParams = async () => {
-        if (!state.legalSettings) return showAlert({ title: "Erro", message: "Configure as tabelas legais primeiro.", type: "ERROR" });
+        const baseSettings = state.legalSettings || {
+            minWage: 1621, inssCeiling: 8475.55, irrfDependentDeduction: 189.59, fgtsRate: 8,
+            timeTrackingMethod: 'PHYSICAL', overtimePolicy: 'PAID_OVERTIME',
+            deductDelaysFromOvertime: false, pointClosingDay: 30, integrateFinance: true,
+            validFrom: '2026-01-01'
+        };
+
         try {
             await saveLegalSettings({
-                ...state.legalSettings,
+                ...baseSettings,
                 ...calcParamsForm
             });
             showAlert({ title: "Sucesso", message: "Parâmetros atualizados.", type: "SUCCESS" });
@@ -181,13 +194,13 @@ export const StaffSettings: React.FC = () => {
         });
     };
 
-    const handleOpenEventTypeModal = (evt?: EventType) => {
+   const handleOpenEventTypeModal = (evt?: EventType) => {
         if (evt) {
             setEditingEventType(evt);
             setEventTypeForm(evt);
         } else {
             setEditingEventType(null);
-            setEventTypeForm({ name: '', operation: '+', isActive: true, calculationType: 'FIXED' });
+            setEventTypeForm({ name: '', operation: '+', isActive: true, calculationType: 'FIXED', esocialCode: '', esocialNature: '' });
         }
         setIsEventTypeModalOpen(true);
     };
@@ -1122,7 +1135,7 @@ export const StaffSettings: React.FC = () => {
                                                             ...timeTrackingForm, 
                                                             timeClock: {
                                                                 ...timeTrackingForm.timeClock, 
-                                                                maxDistanceMeters: parseInt(e.target.value)
+                                                                maxDistanceMeters: parseInt(e.target.value) || 100
                                                             }
                                                         })}
                                                     />
@@ -1177,6 +1190,7 @@ export const StaffSettings: React.FC = () => {
             )}
 
             {/* Modal de Tipo de Evento */}
+           {/* Modal de Tipo de Evento */}
             <Modal isOpen={isEventTypeModalOpen} onClose={() => setIsEventTypeModalOpen(false)} title={editingEventType ? "Editar Tipo de Evento" : "Novo Tipo de Evento"} onSave={handleSaveEventType}>
                 <div className="space-y-4 pt-4">
                     <div>
@@ -1189,29 +1203,82 @@ export const StaffSettings: React.FC = () => {
                             placeholder="Ex: Vale Transporte, Bônus Meta..."
                         />
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold mb-1 text-slate-600">Tipo de Cálculo *</label>
-                        <select 
-                            className="w-full border p-2.5 rounded-xl text-sm bg-white" 
-                            value={eventTypeForm.calculationType || 'FIXED'} 
-                            onChange={e => setEventTypeForm({...eventTypeForm, calculationType: e.target.value as 'FIXED' | 'PERCENTAGE'})}
-                        >
-                            <option value="FIXED">Valor Fixo (R$)</option>
-                            <option value="PERCENTAGE">Porcentagem do Salário (%)</option>
-                        </select>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold mb-1 text-slate-600">Tipo de Cálculo *</label>
+                            <select 
+                                className="w-full border p-2.5 rounded-xl text-sm bg-white" 
+                                value={eventTypeForm.calculationType || 'FIXED'} 
+                                onChange={e => setEventTypeForm({...eventTypeForm, calculationType: e.target.value as 'FIXED' | 'PERCENTAGE'})}
+                            >
+                                <option value="FIXED">Valor Fixo (R$)</option>
+                                <option value="PERCENTAGE">Porcentagem do Salário (%)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold mb-1 text-slate-600">Operação *</label>
+                            <select 
+                                className="w-full border p-2.5 rounded-xl text-sm bg-white" 
+                                value={eventTypeForm.operation} 
+                                onChange={e => setEventTypeForm({...eventTypeForm, operation: e.target.value as '+' | '-'})}
+                            >
+                                <option value="+">Provento (+) - Soma ao Salário</option>
+                                <option value="-">Desconto (-) - Subtrai do Salário</option>
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold mb-1 text-slate-600">Operação *</label>
-                        <select 
-                            className="w-full border p-2.5 rounded-xl text-sm bg-white" 
-                            value={eventTypeForm.operation} 
-                            onChange={e => setEventTypeForm({...eventTypeForm, operation: e.target.value as '+' | '-'})}
-                        >
-                            <option value="+">Provento (+) - Soma ao Salário</option>
-                            <option value="-">Desconto (-) - Subtrai do Salário</option>
-                        </select>
+                    
+                    <div className="border-t pt-4 mt-2">
+                        <h5 className="text-[10px] font-black text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-1">Integração eSocial (Tabela 03)</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold mb-1 text-slate-600">Código da Rubrica (eSocial)</label>
+                                <select 
+                                    className="w-full border p-2.5 rounded-xl text-sm bg-white" 
+                                    value={eventTypeForm.esocialCode || ''} 
+                                    onChange={e => setEventTypeForm({...eventTypeForm, esocialCode: e.target.value})}
+                                >
+                                    <option value="">Nenhum (Evento Interno)</option>
+                                    <optgroup label="Proventos (+)">
+                                        <option value="1000">1000 - Salário / Vencimento</option>
+                                        <option value="1003">1003 - Horas Extras</option>
+                                        <option value="1004">1004 - Horas Extras (Banco de Horas)</option>
+                                        <option value="1201">1201 - Adicional Noturno</option>
+                                        <option value="1202">1202 - Adicional de Insalubridade</option>
+                                        <option value="1203">1203 - Adicional de Periculosidade</option>
+                                        <option value="1600">1600 - Bônus / Premiação (Isento)</option>
+                                        <option value="1620">1620 - Participação nos Lucros (PLR)</option>
+                                        <option value="1801">1801 - Ajuda de Custo</option>
+                                    </optgroup>
+                                    <optgroup label="Descontos (-)">
+                                        <option value="9201">9201 - Contribuição Previdenciária (INSS)</option>
+                                        <option value="9203">9203 - IRRF</option>
+                                        <option value="9209">9209 - Desconto de Faltas/Atrasos</option>
+                                        <option value="9213">9213 - Desconto de Vale Transporte</option>
+                                        <option value="9214">9214 - Desconto de Vale Refeição</option>
+                                        <option value="9215">9215 - Desconto de Plano de Saúde</option>
+                                        <option value="9218">9218 - Desconto de Adiantamento Salarial</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1 text-slate-600">Natureza (Incidência)</label>
+                                <select 
+                                    className="w-full border p-2.5 rounded-xl text-sm bg-white" 
+                                    value={eventTypeForm.esocialNature || ''} 
+                                    onChange={e => setEventTypeForm({...eventTypeForm, esocialNature: e.target.value})}
+                                >
+                                    <option value="">Não Tributável</option>
+                                    <option value="11">11 - Base Cálculo INSS, FGTS e IRRF (Ex: Salário, HE)</option>
+                                    <option value="01">01 - Isento de Impostos (Ex: PLR, Premiações)</option>
+                                    <option value="13">13 - Exclusivo FGTS (Ex: Aviso Prévio)</option>
+                                    <option value="91">91 - Desconto que Deduz Base (Ex: INSS deduz do IRRF)</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 pt-2">
+
+                    <div className="flex items-center gap-2 pt-4">
                         <input 
                             type="checkbox" 
                             id="isActive" 
@@ -1219,7 +1286,7 @@ export const StaffSettings: React.FC = () => {
                             onChange={e => setEventTypeForm({...eventTypeForm, isActive: e.target.checked})}
                             className="w-4 h-4 text-blue-600 rounded border-gray-300"
                         />
-                        <label htmlFor="isActive" className="text-sm font-bold text-slate-700">Ativo</label>
+                        <label htmlFor="isActive" className="text-sm font-bold text-slate-700">Ativo para uso na Folha</label>
                     </div>
                 </div>
             </Modal>

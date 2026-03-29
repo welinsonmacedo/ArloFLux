@@ -13,7 +13,7 @@ interface AdminSettingsProps {
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ view = 'BUSINESS' }) => {
-  const { state, dispatch } = useRestaurant();
+  const { state, updateBusinessInfo } = useRestaurant();    
   const { showAlert, showConfirm } = useUI();
   const { state: staffState, saveLegalSettings } = useStaff();
   const { legalSettings } = staffState;
@@ -62,7 +62,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ view = 'BUSINESS' 
   }, [state.businessInfo]);
 
   const handleSaveBusiness = async () => {
-      await dispatch({ type: 'UPDATE_BUSINESS_INFO', info: businessForm });
+      await updateBusinessInfo({ type: 'UPDATE_BUSINESS_INFO', info: businessForm });
       showAlert({ title: 'Sucesso', message: 'Dados atualizados!', type: 'SUCCESS' });
   };
   
