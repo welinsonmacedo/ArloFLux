@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { FileText, Calendar, UserMinus, DollarSign, Archive } from 'lucide-react';
+import { FileText, Calendar, UserMinus, DollarSign, Archive, ClipboardList } from 'lucide-react';
 import { StaffPayroll } from '@/modules/staff/pages/admin/StaffPayroll';
 import { StaffVacation } from '@/modules/staff/pages/admin/StaffVacation';
 import { StaffTermination } from '@/modules/staff/pages/admin/StaffTermination';
 import { StaffThirteenth } from '@/modules/staff/pages/admin/StaffThirteenth';
 import { ClosedPayrollsTab } from '@/modules/staff/pages/admin/ClosedPayrollsTab';
+import { AccountingTab } from '@/modules/staff/pages/admin/AccountingTab';
 
 export const StaffPayrollWrapper: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'PAYROLL' | 'VACATION' | 'TERMINATION' | 'THIRTEENTH' | 'CLOSED_PAYROLLS'>('PAYROLL');
+    // Atualizado para incluir o tipo ACCOUNTING
+    const [activeTab, setActiveTab] = useState<'PAYROLL' | 'VACATION' | 'TERMINATION' | 'THIRTEENTH' | 'CLOSED_PAYROLLS' | 'ACCOUNTING'>('PAYROLL');
 
     return (
         <div className="flex h-full animate-fade-in gap-6">
@@ -50,13 +52,20 @@ export const StaffPayrollWrapper: React.FC = () => {
                         </div>
 
                         <div>
-                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Histórico</h3>
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Histórico e Contábil</h3>
                             <div className="space-y-1">
                                 <button 
                                     onClick={() => setActiveTab('CLOSED_PAYROLLS')} 
                                     className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'CLOSED_PAYROLLS' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
                                 >
                                     <Archive size={16}/> Folhas Fechadas
+                                </button>
+                                {/* Nova aba Contabilidade */}
+                                <button 
+                                    onClick={() => setActiveTab('ACCOUNTING')} 
+                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'ACCOUNTING' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                >
+                                    <ClipboardList size={16}/> Contabilidade
                                 </button>
                             </div>
                         </div>
@@ -71,6 +80,7 @@ export const StaffPayrollWrapper: React.FC = () => {
                 {activeTab === 'THIRTEENTH' && <StaffThirteenth />}
                 {activeTab === 'TERMINATION' && <StaffTermination />}
                 {activeTab === 'CLOSED_PAYROLLS' && <ClosedPayrollsTab />}
+                {activeTab === 'ACCOUNTING' && <AccountingTab />}
             </div>
         </div>
     );

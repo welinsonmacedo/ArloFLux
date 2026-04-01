@@ -1,485 +1,300 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useRestaurant } from '@/core/context/RestaurantContext';
+import { useFinance } from '@/core/context/FinanceContext';
 import { useUI } from '@/core/context/UIContext';
 import { Button } from '@/modules/common/components/Button';
 import { supabase } from '@/core/api/supabaseClient';
 import { DREReportPrint } from '@/modules/finance/components/reports/DREReportPrint';
+import { ManagerInsights } from './ManagerInsights';
 import { 
     Loader2, RefreshCcw, Printer, Settings, 
-    TrendingUp, TrendingDown, DollarSign, PieChart, 
-    Calendar, AlertCircle, FileText
+    TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, 
+    Calendar, AlertCircle, FileText, Download, FileSpreadsheet,
+    ArrowUpCircle, ArrowDownCircle, BarChart3
 } from 'lucide-react';
+import { 
+    PieChart, Pie, Cell, ResponsiveContainer, 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend 
+} from 'recharts';
+import { formatCurrency } from '@/core/utils/currency';
 
 export const AdminAccounting: React.FC = () => {
-  const { state } = useRestaurant();
+  const { state: restState } = useRestaurant();
   const { showAlert } = useUI();
   
-  // --- ESTADOS ---
   const [dateStart, setDateStart] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]); 
   const [dateEnd, setDateEnd] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   
-  // Configurações Contábeis
   const [config, setConfig] = useState({
       accountingMethod: 'COMPETENCE' as 'COMPETENCE' | 'CASH',
-      taxRate: state.businessInfo.taxPercentage ?? 6.0,
+      taxRate: restState.businessInfo.taxPercentage ?? 6.0,
       fees: {
-          credit: state.businessInfo.paymentMethods?.find(p => p.type === 'CREDIT')?.feePercentage ?? 3.99,
-          debit: state.businessInfo.paymentMethods?.find(p => p.type === 'DEBIT')?.feePercentage ?? 1.99,
-          pix: state.businessInfo.paymentMethods?.find(p => p.type === 'PIX')?.feePercentage ?? 0.0,
-          voucher: state.businessInfo.paymentMethods?.find(p => p.type === 'MEAL_VOUCHER')?.feePercentage ?? 4.5
+          credit: restState.businessInfo.paymentMethods?.find(p => p.type === 'CREDIT')?.feePercentage ?? 3.99,
+          debit: restState.businessInfo.paymentMethods?.find(p => p.type === 'DEBIT')?.feePercentage ?? 1.99,
+          pix: restState.businessInfo.paymentMethods?.find(p => p.type === 'PIX')?.feePercentage ?? 0.0,
+          voucher: restState.businessInfo.paymentMethods?.find(p => p.type === 'MEAL_VOUCHER')?.feePercentage ?? 4.5
       }
   });
 
-  useEffect(() => {
-      setConfig(prev => ({
-          ...prev,
-          taxRate: state.businessInfo.taxPercentage ?? prev.taxRate,
-          fees: {
-              credit: state.businessInfo.paymentMethods?.find(p => p.type === 'CREDIT')?.feePercentage ?? prev.fees.credit,
-              debit: state.businessInfo.paymentMethods?.find(p => p.type === 'DEBIT')?.feePercentage ?? prev.fees.debit,
-              pix: state.businessInfo.paymentMethods?.find(p => p.type === 'PIX')?.feePercentage ?? prev.fees.pix,
-              voucher: state.businessInfo.paymentMethods?.find(p => p.type === 'MEAL_VOUCHER')?.feePercentage ?? prev.fees.voucher
-          }
-      }));
-  }, [state.businessInfo]);
-
-  // Visibilidade das Seções
-  const [visibility] = useState({
-      charts: true,
-      revenue: true,
-      cmv: true,
-      expenses: true,
-      financial: true
-  });
-
-  // Estado dos Dados
   const [data, setData] = useState<any>({
       grossRevenue: 0, saloonSales: 0, posSales: 0, 
       taxes: 0, cardFees: 0, netRevenue: 0,
       cmv: 0, grossProfit: 0, 
-      expenses: { fixed: 0, variable: 0, personnel: 0, financial: 0, total: 0, byCategory: {} as Record<string, number> },
-      ebitda: 0, netIncome: 0, hasData: false
+      expenses: { fixed: 0, variable: 0, personnel: 0, financial: 0, total: 0, byCategory: [] as any[] },
+      ebitda: 0, netIncome: 0, losses: 0, hasData: false
   });
 
-  // --- BUSCA E CÁLCULO ---
-  const fetchDRE = useCallback(async () => {
-      if (!state.tenantId) return;
-      setLoading(true);
-      
-      try {
-          // Define intervalo com horário para pegar o dia inteiro
-          const start = dateStart + ' 00:00:00';
-          const end = dateEnd + ' 23:59:59';
+  const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
-          // 1. Receita (Transações)
-          const { data: transRes, error: transErr } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('tenant_id', state.tenantId)
-            .gte('created_at', start)
-            .lte('created_at', end)
-            .neq('status', 'CANCELLED');
-
-          if (transErr) throw transErr;
-
-          // 2. Custos (CMV) - Baseado em Pedidos Pagos
-          const { data: itemsRes, error: itemsErr } = await supabase
-            .from('order_items')
-            .select('quantity, product_cost_price, orders!inner(is_paid, created_at, status)')
-            .eq('tenant_id', state.tenantId)
-            .eq('orders.is_paid', true)
-            .neq('orders.status', 'CANCELLED')
-            .gte('orders.created_at', start)
-            .lte('orders.created_at', end);
-
-          if (itemsErr) throw itemsErr;
-
-          // 3. Despesas (Operacionais e Financeiras)
-          let expensesQuery = supabase.from('expenses').select('*').eq('tenant_id', state.tenantId);
-
-          if (config.accountingMethod === 'CASH') {
-              expensesQuery = expensesQuery
-                .eq('is_paid', true)
-                .gte('paid_date', start) // Usa timestamp completo
-                .lte('paid_date', end);  // Usa timestamp completo
-          } else {
-              expensesQuery = expensesQuery
-                .gte('due_date', start) // Usa timestamp completo
-                .lte('due_date', end);  // Usa timestamp completo
-          }
-
-          const { data: expsRes, error: expsErr } = await expensesQuery;
-          if (expsErr) throw expsErr;
-
-          // --- PROCESSAMENTO ---
-          
-          // Receita Bruta
-          let grossRev = 0, saloonSales = 0, posSales = 0;
-          let calculatedCardFees = 0;
-
-          transRes?.forEach((t: any) => {
-              const amt = Number(t.amount) || 0;
-              grossRev += amt;
-              
-              if (t.items_summary?.includes('Mesa')) saloonSales += amt;
-              else posSales += amt;
-
-              // Cálculo de Taxas de Maquininha
-              let rate = 0;
-              if (t.method === 'CREDIT') rate = config.fees.credit;
-              else if (t.method === 'DEBIT') rate = config.fees.debit;
-              else if (t.method === 'PIX') rate = config.fees.pix;
-              else if (t.method === 'MEAL_VOUCHER') rate = config.fees.voucher;
-              
-              calculatedCardFees += amt * (rate / 100);
-          });
-
-          // CMV
-          let cmvTotal = 0;
-          itemsRes?.forEach((item: any) => {
-              const qty = Number(item.quantity) || 0;
-              const cost = Number(item.product_cost_price) || 0;
-              cmvTotal += (qty * cost);
-          });
-
-          // Deduções e Margem
-          const taxes = grossRev * (config.taxRate / 100);
-          const netRevenue = grossRev - taxes - calculatedCardFees;
-          const grossProfit = netRevenue - cmvTotal;
-
-          // Processamento de Despesas
-          let expFixed = 0;
-          let expVariable = 0; // Operacional Variável
-          let expPersonnel = 0;
-          let expFinancial = 0;
-          const expByCat: Record<string, number> = {};
-
-          expsRes?.forEach((e: any) => {
-              const amt = Number(e.amount) || 0;
-              const cat = e.category || 'Outros';
-              
-              expByCat[cat] = (expByCat[cat] || 0) + amt;
-
-              // Categorização para o DRE
-              if (['Pessoal', 'Salário', 'Pró-labore', 'Funcionários'].includes(cat)) {
-                  expPersonnel += amt;
-              } else if (['Impostos', 'Taxas Bancárias', 'Juros', 'Multas'].includes(cat)) {
-                  expFinancial += amt;
-              } else if (['Aluguel', 'Internet', 'Sistema', 'Contador', 'Segurança'].includes(cat)) {
-                  expFixed += amt;
-              } else {
-                  // Todo o resto (Manutenção, Fornecedor, Outros, Marketing) cai aqui como Operacional/Variável
-                  expVariable += amt;
-              }
-          });
-
-          const totalOpExpenses = expFixed + expVariable + expPersonnel;
-          const ebitda = grossProfit - totalOpExpenses;
-          const netResult = ebitda - expFinancial;
-
-          setData({
-              grossRevenue: grossRev, saloonSales, posSales, 
-              taxes, cardFees: calculatedCardFees, netRevenue,
-              cmv: cmvTotal, grossProfit, 
-              expenses: { 
-                  fixed: expFixed, 
-                  variable: expVariable, 
-                  personnel: expPersonnel, 
-                  financial: expFinancial, 
-                  total: totalOpExpenses + expFinancial, 
-                  byCategory: expByCat 
-              },
-              ebitda,
-              netIncome: netResult,
-              hasData: grossRev > 0 || (totalOpExpenses + expFinancial) > 0
-          });
-
-      } catch (error) {
-          console.error(error);
-          showAlert({ title: 'Erro', message: 'Falha ao calcular DRE.', type: 'ERROR' });
-      } finally {
-          setLoading(false);
-      }
-  }, [state.tenantId, dateStart, dateEnd, config, showAlert]);
-
-  useEffect(() => { 
-      if (state.tenantId) fetchDRE(); 
-  }, [state.tenantId, fetchDRE]);
-
-  // --- UTILS DE RENDERIZAÇÃO ---
-  
   const getAV = (value: number) => {
       if (data.grossRevenue === 0) return '0.0%';
       return `${((value / data.grossRevenue) * 100).toFixed(1)}%`;
   };
 
-  const formatCurrency = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fetchDRE = useCallback(async () => {
+      if (!restState.tenantId) return;
+      setLoading(true);
+      try {
+          const start = dateStart + ' 00:00:00';
+          const end = dateEnd + ' 23:59:59';
+          const [transRes, itemsRes, expsRes, cancelledRes] = await Promise.all([
+            supabase.from('transactions').select('*').eq('tenant_id', restState.tenantId).gte('created_at', start).lte('created_at', end).neq('status', 'CANCELLED'),
+            supabase.from('order_items').select('quantity, product_cost_price, orders!inner(is_paid, created_at, status)').eq('tenant_id', restState.tenantId).eq('orders.is_paid', true).gte('orders.created_at', start).lte('orders.created_at', end),
+            supabase.from('expenses').select('*').eq('tenant_id', restState.tenantId).gte(config.accountingMethod === 'CASH' ? 'paid_date' : 'due_date', start).lte(config.accountingMethod === 'CASH' ? 'paid_date' : 'due_date', end),
+            supabase.from('orders').select('total_amount').eq('tenant_id', restState.tenantId).eq('status', 'CANCELLED').gte('created_at', start).lte('created_at', end)
+          ]);
 
-  // Métricas para os Cards
-  // const cmvPerc = data.netRevenue > 0 ? (data.cmv / data.netRevenue) * 100 : 0;
-  // const marginPerc = data.netRevenue > 0 ? (data.grossProfit / data.netRevenue) * 100 : 0;
-  // const profitPerc = data.grossRevenue > 0 ? (data.netIncome / data.grossRevenue) * 100 : 0;
+          let grossRev = 0, saloonSales = 0, posSales = 0, fees = 0;
+          transRes.data?.forEach((t: any) => {
+              const amt = Number(t.amount) || 0;
+              grossRev += amt;
+              if (t.items_summary?.includes('Mesa')) saloonSales += amt; else posSales += amt;
+              let rate = t.method === 'CREDIT' ? config.fees.credit : t.method === 'DEBIT' ? config.fees.debit : 0;
+              fees += amt * (rate / 100);
+          });
 
-  const Row = ({ label, value, type = 'normal', indent = false, isNegative = false }: any) => (
-    <div className={`flex justify-between py-2.5 ${indent ? 'pl-8' : ''} ${type === 'total' ? 'border-t-2 border-slate-800 font-black text-slate-900 bg-slate-50 mt-2 px-2' : 'border-b border-slate-100 text-slate-600'}`}>
-        <div className="flex items-center gap-2 group relative">
-            <span className={type === 'total' ? 'uppercase tracking-tight text-sm' : 'font-medium text-sm'}>{label}</span>
-        </div>
-        <div className="flex items-center gap-4">
-            <span className={`font-mono font-bold ${isNegative ? 'text-red-500' : 'text-slate-800'}`}>
-                {isNegative && value > 0 ? '-' : ''} {formatCurrency(Math.abs(value))}
-            </span>
-            <span className="text-[10px] w-12 text-right font-mono text-slate-400">{getAV(value)}</span>
-        </div>
-    </div>
-  );
+          const cmv = itemsRes.data?.reduce((acc, i) => acc + (Number(i.quantity) * Number(i.product_cost_price)), 0) || 0;
+          const taxes = grossRev * (config.taxRate / 100);
+          const netRevenue = grossRev - taxes - fees;
+          const losses = cancelledRes.data?.reduce((acc, c) => acc + (Number(c.total_amount) || 0), 0) || 0;
 
-  const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-full relative overflow-hidden group hover:shadow-md transition-all">
-          <div className={`absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity ${colorClass}`}>
-              <Icon size={48} />
-          </div>
-          <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{title}</p>
-              <h3 className={`text-2xl font-black ${colorClass.replace('bg-', 'text-').replace('100', '600')}`}>{value}</h3>
-          </div>
-          <p className="text-[10px] text-gray-400 font-medium mt-3 border-t pt-2 flex justify-between">
-              <span>Margem</span>
-              <span className="font-bold">{subtext}</span>
-          </p>
-      </div>
-  );
+          let personnel = 0, fixed = 0, variable = 0, financial = 0;
+          const categoryMap: Record<string, number> = {};
+          expsRes.data?.forEach((e: any) => {
+              const amt = Number(e.amount) || 0;
+              categoryMap[e.category] = (categoryMap[e.category] || 0) + amt;
+              if (['Pessoal', 'Salário', 'Encargos'].includes(e.category)) personnel += amt;
+              else if (['Financeiro', 'Taxas', 'Juros'].includes(e.category)) financial += amt;
+              else if (['Fixa', 'Aluguel', 'Sistema'].includes(e.category)) fixed += amt;
+              else variable += amt;
+          });
+
+          const expensesByCategory = Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
+
+          setData({
+              grossRevenue: grossRev, saloonSales, posSales, taxes, cardFees: fees, netRevenue,
+              cmv, grossProfit: netRevenue - cmv,
+              expenses: { personnel, fixed, variable, financial, total: personnel + fixed + variable + financial, byCategory: expensesByCategory },
+              ebitda: (netRevenue - cmv) - (personnel + fixed + variable),
+              netIncome: ((netRevenue - cmv) - (personnel + fixed + variable)) - financial,
+              losses, hasData: true
+          });
+      } catch (err) {
+          showAlert({ title: "Erro", message: "Falha ao processar dados.", type: "ERROR" });
+      } finally { setLoading(false); }
+  }, [restState.tenantId, dateStart, dateEnd, config, showAlert]);
+
+  useEffect(() => { if (restState.tenantId) fetchDRE(); }, [fetchDRE]);
+
+  const chartData = [
+    { name: 'Receita Líquida', valor: data.netRevenue, fill: '#3B82F6' },
+    { name: 'CMV', valor: data.cmv, fill: '#F59E0B' },
+    { name: 'Despesas Op.', valor: data.expenses.total - data.expenses.financial, fill: '#EF4444' },
+    { name: 'Lucro Líquido', valor: data.netIncome, fill: '#10B981' },
+  ];
 
   return (
-    <>
-    {/* CONTEÚDO PARA TELA (DASHBOARD) - OCULTO NA IMPRESSÃO */}
-    <div className="space-y-6 animate-fade-in pb-20 print:hidden">
-        
-        {/* HEADER & CONTROLES */}
-        <div className="flex flex-col gap-4">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200 gap-4">
-                <div>
-                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                        <FileText className="text-blue-600"/> DRE Gerencial
-                    </h2>
-                    <p className="text-sm text-gray-500">Demonstração do Resultado do Exercício</p>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                     <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-200 shadow-inner">
-                        <Calendar size={16} className="text-gray-400 ml-2"/>
-                        <input 
-                            type="date" 
-                            className="bg-transparent text-sm font-bold text-slate-700 outline-none p-1" 
-                            value={dateStart} 
-                            onChange={e => setDateStart(e.target.value)} 
-                        />
-                        <span className="text-gray-400 font-bold">à</span>
-                        <input 
-                            type="date" 
-                            className="bg-transparent text-sm font-bold text-slate-700 outline-none p-1" 
-                            value={dateEnd} 
-                            onChange={e => setDateEnd(e.target.value)} 
-                        />
-                    </div>
-
-                    <Button variant="secondary" onClick={() => setShowConfig(!showConfig)} className={`h-[44px] w-[44px] p-0 flex items-center justify-center ${showConfig ? 'bg-blue-100 text-blue-600 border-blue-200' : ''}`}>
-                        <Settings size={20}/>
-                    </Button>
-                    
-                    <Button onClick={fetchDRE} disabled={loading} className="h-[44px] px-6 shadow-blue-200 shadow-lg">
-                        {loading ? <Loader2 className="animate-spin" /> : <RefreshCcw size={18}/>} 
-                        <span className="ml-2 hidden sm:inline">Gerar</span>
-                    </Button>
-
-                    <Button variant="outline" onClick={() => window.print()} className="h-[44px]">
-                        <Printer size={18}/>
-                    </Button>
-                </div>
+    <div className="p-6 space-y-6 pb-24 animate-fade-in bg-slate-50 min-h-screen">
+        {/* HEADER */}
+        <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200 gap-4 print:hidden">
+            <div>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+                    <BarChart3 className="text-blue-600"/> Inteligência Contábil
+                </h2>
+                <p className="text-sm text-gray-500 font-medium">Análise visual de performance e resultado</p>
             </div>
-
-            {/* Painel de Configurações */}
-            {showConfig && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-blue-100 animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
-                    <div>
-                        <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Parâmetros Fiscais</h4>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Regime de Apuração</label>
-                                <div className="flex bg-gray-100 p-1 rounded-lg">
-                                    <button onClick={() => setConfig({...config, accountingMethod: 'COMPETENCE'})} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${config.accountingMethod === 'COMPETENCE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>Competência (Venda)</button>
-                                    <button onClick={() => setConfig({...config, accountingMethod: 'CASH'})} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${config.accountingMethod === 'CASH' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}>Caixa (Pagamento)</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Alíquota de Imposto (%)</label>
-                                <input type="number" step="0.1" className="w-full border p-2 rounded-lg text-sm font-bold bg-gray-50 focus:bg-white focus:border-blue-500 outline-none" value={config.taxRate} onChange={e => setConfig({...config, taxRate: parseFloat(e.target.value) || 0})} />
-                                <p className="text-[10px] text-gray-400 mt-1">Puxado das Configurações da Empresa</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Taxas de Recebimento (%)</h4>
-                        <p className="text-[10px] text-gray-400 mb-2">Puxado das Configurações da Empresa</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div><label className="block text-[10px] font-bold text-gray-500">Crédito</label><input type="number" step="0.01" className="w-full border p-2 rounded text-sm" value={config.fees.credit} onChange={e => setConfig({...config, fees: {...config.fees, credit: parseFloat(e.target.value)}})} /></div>
-                            <div><label className="block text-[10px] font-bold text-gray-500">Débito</label><input type="number" step="0.01" className="w-full border p-2 rounded text-sm" value={config.fees.debit} onChange={e => setConfig({...config, fees: {...config.fees, debit: parseFloat(e.target.value)}})} /></div>
-                            <div><label className="block text-[10px] font-bold text-gray-500">Voucher</label><input type="number" step="0.01" className="w-full border p-2 rounded text-sm" value={config.fees.voucher} onChange={e => setConfig({...config, fees: {...config.fees, voucher: parseFloat(e.target.value)}})} /></div>
-                            <div><label className="block text-[10px] font-bold text-gray-500">PIX</label><input type="number" step="0.01" className="w-full border p-2 rounded text-sm" value={config.fees.pix} onChange={e => setConfig({...config, fees: {...config.fees, pix: parseFloat(e.target.value)}})} /></div>
-                        </div>
-                    </div>
+            <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200 text-xs font-bold">
+                    <Calendar size={14} className="text-slate-400" />
+                    <input type="date" className="bg-transparent outline-none" value={dateStart} onChange={e => setDateStart(e.target.value)} />
+                    <span className="text-slate-300">até</span>
+                    <input type="date" className="bg-transparent outline-none" value={dateEnd} onChange={e => setDateEnd(e.target.value)} />
                 </div>
-            )}
+                <Button variant="outline" onClick={() => window.print()} className="bg-white"><Printer size={18}/></Button>
+                <Button onClick={fetchDRE} disabled={loading} className="shadow-lg shadow-blue-200">
+                    {loading ? <Loader2 className="animate-spin" /> : <RefreshCcw size={18}/>}
+                </Button>
+                <Button variant="secondary" onClick={() => setShowConfig(!showConfig)}><Settings size={20}/></Button>
+            </div>
         </div>
 
-        {/* --- RELATÓRIO VISUAL (TELA) --- */}
-        {data.hasData ? (
-            <div className="space-y-6">
-                
-                {/* 1. Dashboard de KPIs (Executivo) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <KPICard 
-                        title="Receita Líquida" 
-                        value={formatCurrency(data.netRevenue)} 
-                        subtext={getAV(data.netRevenue)}
-                        icon={DollarSign}
-                        colorClass="bg-blue-100 text-blue-600"
-                    />
-                    <KPICard 
-                        title="Margem Contrib." 
-                        value={formatCurrency(data.grossProfit)} 
-                        subtext={getAV(data.grossProfit)}
-                        icon={TrendingUp}
-                        colorClass="bg-emerald-100 text-emerald-600"
-                    />
-                    <KPICard 
-                        title="EBITDA" 
-                        value={formatCurrency(data.ebitda)} 
-                        subtext={getAV(data.ebitda)}
-                        icon={PieChart}
-                        colorClass="bg-purple-100 text-purple-600"
-                    />
-                    <KPICard 
-                        title="Lucro Líquido" 
-                        value={formatCurrency(data.netIncome)} 
-                        subtext={getAV(data.netIncome)}
-                        icon={data.netIncome >= 0 ? TrendingUp : AlertCircle}
-                        colorClass={data.netIncome >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}
-                    />
+        {data.hasData && (
+            <>
+                {/* KPI CARDS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                            <TrendingUp size={48} className="text-emerald-600" />
+                        </div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lucro Líquido</span>
+                        <h4 className={`text-2xl font-black mt-1 ${data.netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(data.netIncome)}</h4>
+                        <div className="mt-2 flex items-center gap-1">
+                            <span className="text-xs font-bold text-slate-400">{getAV(data.netIncome)} da receita</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CMV (Insumos)</span>
+                        <h4 className="text-2xl font-black text-orange-500 mt-1">{getAV(data.cmv)}</h4>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3">
+                            <div className="bg-orange-500 h-full rounded-full" style={{ width: getAV(data.cmv) }}></div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ponto de Equilíbrio</span>
+                        <h4 className="text-2xl font-black text-blue-600 mt-1">{formatCurrency((data.expenses.total) / (data.grossProfit / data.grossRevenue || 1))}</h4>
+                        <p className="text-[10px] text-slate-400 mt-1 font-bold italic">Meta mínima de vendas</p>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-rose-500">Perdas Totais</span>
+                        <h4 className="text-2xl font-black text-rose-600 mt-1">{formatCurrency(data.losses)}</h4>
+                        <p className="text-[10px] text-slate-400 mt-1">Pedidos cancelados no período</p>
+                    </div>
                 </div>
 
-                {/* 2. Demonstração Vertical Detalhada */}
-                <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-                    <div className="bg-slate-900 text-white p-6 flex justify-between items-center">
+                {/* VISUAL CHARTS SECTION */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Estrutura de Custos (Pie Chart) */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 className="text-sm font-black text-slate-800 uppercase mb-6 flex items-center gap-2">
+                            <PieChartIcon size={16} className="text-purple-500" /> Composição de Gastos
+                        </h3>
+                        <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={data.expenses.byCategory}
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {data.expenses.byCategory.map((entry: any, index: number) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                    <Legend />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Comparativo de Margem (Bar Chart) */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 className="text-sm font-black text-slate-800 uppercase mb-6 flex items-center gap-2">
+                            <TrendingUp size={16} className="text-blue-500" /> Fluxo de Valor
+                        </h3>
+                        <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="name" fontSize={10} fontWeight="bold" />
+                                    <YAxis hide />
+                                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                    <Bar dataKey="valor" radius={[10, 10, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+                {/* DETAILED DRE TABLE */}
+                <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
                         <div>
-                            <h1 className="text-xl font-black uppercase tracking-widest">Relatório DRE {config.accountingMethod === 'CASH' ? '(Caixa)' : '(Competência)'}</h1>
-                            <p className="text-xs text-slate-400 font-bold uppercase">{state.theme.restaurantName}</p>
+                            <h3 className="text-xl font-black uppercase tracking-widest">Demonstrativo de Resultado</h3>
+                            <p className="text-xs text-slate-400 font-bold">{restState.businessInfo.name}</p>
                         </div>
-                        <div className="text-right">
-                            <p className="text-xs text-slate-400 font-mono">Período</p>
-                            <p className="font-bold text-sm">{new Date(dateStart).toLocaleDateString()} a {new Date(dateEnd).toLocaleDateString()}</p>
+                        <div className="text-right border-l border-slate-700 pl-6">
+                            <p className="text-[10px] font-bold opacity-50 uppercase">Período</p>
+                            <p className="text-sm font-bold font-mono">{dateStart} a {dateEnd}</p>
                         </div>
                     </div>
 
-                    <div className="p-10">
-                        {/* SEÇÃO 1: RECEITA */}
-                        {visibility.revenue && (
-                            <>
-                                <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <DollarSign size={14} /> 1. Receita e Deduções
-                                </h3>
-                                <Row label="(+) Receita Bruta de Vendas" value={data.grossRevenue} />
-                                <Row label="    Vendas Mesas / Salão" value={data.saloonSales} indent />
-                                <Row label="    Vendas Balcão / PDV" value={data.posSales} indent />
-                                <Row label={`(-) Impostos (${config.taxRate}%)`} value={data.taxes} isNegative />
-                                <Row label="(-) Taxas de Cartão / Recebimento" value={data.cardFees} isNegative />
-                                <Row label="(=) RECEITA LÍQUIDA" value={data.netRevenue} type="total" />
-                            </>
-                        )}
-
-                        {/* SEÇÃO 2: CMV */}
-                        {visibility.cmv && (
-                            <>
-                                <h3 className="text-xs font-black text-orange-600 uppercase tracking-widest mb-4 mt-12 flex items-center gap-2">
-                                    <TrendingDown size={14} /> 2. Custos Variáveis (CMV)
-                                </h3>
-                                <Row label="(-) Custo de Mercadoria Vendida" value={data.cmv} isNegative />
-                                <Row label="(=) LUCRO BRUTO" value={data.grossProfit} type="total" />
-                            </>
-                        )}
-
-                        {/* SEÇÃO 3: OPERACIONAIS */}
-                        {visibility.expenses && (
-                            <>
-                                <h3 className="text-xs font-black text-purple-600 uppercase tracking-widest mb-4 mt-12 flex items-center gap-2">
-                                    <FileText size={14} /> 3. Despesas Operacionais
-                                </h3>
-                                <Row label="(-) Pessoal / Folha" value={data.expenses.personnel} indent isNegative />
-                                <Row label="(-) Fixas (Aluguel/Sistema)" value={data.expenses.fixed} indent isNegative />
-                                <Row label="(-) Variáveis / Gerais" value={data.expenses.variable} indent isNegative />
-                                
-                                {/* Expansão Detalhada */}
-                                <div className="pl-8 mt-2 border-l-2 border-gray-100 ml-4">
-                                    {Object.entries(data.expenses.byCategory).map(([cat, val]: any) => {
-                                        if (!['Pessoal', 'Salário', 'Pró-labore', 'Impostos', 'Taxas Bancárias', 'Aluguel', 'Internet', 'Sistema'].includes(cat)) {
-                                            return <Row key={cat} label={`• ${cat}`} value={val} indent isNegative />;
-                                        }
-                                        return null;
-                                    })}
-                                </div>
-
-                                <Row label="(=) EBITDA (Operacional)" value={data.ebitda} type="total" />
-                            </>
-                        )}
-
-                        {/* SEÇÃO 4: RESULTADO */}
-                        {visibility.financial && (
-                            <>
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 mt-12 flex items-center gap-2">
-                                    <TrendingUp size={14} /> 4. Resultado Final
-                                </h3>
-                                <Row label="(-) Despesas Financeiras / Bancárias" value={data.expenses.financial} isNegative />
-                                <Row label="(=) LUCRO LÍQUIDO FINAL" value={data.netIncome} type="total" />
-                            </>
-                        )}
-
-                        {/* Banner de Resultado Final */}
-                        <div className={`mt-16 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between border-4 ${data.netIncome >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                            <div className="text-center md:text-left mb-6 md:mb-0">
-                                <h4 className={`text-2xl font-black uppercase tracking-tighter ${data.netIncome >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{data.netIncome >= 0 ? 'Resultado Positivo' : 'Prejuízo Apurado'}</h4>
-                                <p className="text-slate-500 font-medium">Lucro real após todas as baixas e despesas.</p>
+                    <div className="p-8 space-y-3">
+                        <div className="flex justify-between font-bold border-b pb-2 text-slate-800">
+                            <span>(+) RECEITA BRUTA TOTAL</span>
+                            <div className="text-right">
+                                <span>{formatCurrency(data.grossRevenue)}</span>
+                                <span className="text-[10px] ml-4 text-slate-400">100%</span>
                             </div>
-                            <div className="text-center md:text-right">
-                                <div className={`text-5xl font-black ${data.netIncome >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>R$ {data.netIncome.toFixed(2)}</div>
+                        </div>
+                        
+                        <div className="flex justify-between text-sm text-slate-500 pl-4 italic">
+                            <span>(-) Impostos Fiscais ({config.taxRate}%)</span>
+                            <span>{formatCurrency(data.taxes)}</span>
+                        </div>
+
+                        <div className="flex justify-between font-black bg-slate-50 p-4 rounded-xl border-y border-slate-100 my-4">
+                            <span className="text-blue-600">(=) RECEITA LÍQUIDA</span>
+                            <div className="text-right">
+                                <span className="text-blue-600">{formatCurrency(data.netRevenue)}</span>
+                                <span className="text-[10px] ml-4 text-slate-400">{getAV(data.netRevenue)}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-between font-bold text-orange-600 pl-4">
+                            <span>(-) CMV (Custo de Mercadoria)</span>
+                            <div className="text-right">
+                                <span>{formatCurrency(data.cmv)}</span>
+                                <span className="text-[10px] ml-4 text-slate-400">{getAV(data.cmv)}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-between font-black text-xl pt-6 border-t-4 border-double border-slate-200 mt-6">
+                            <span className={data.netIncome >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                                {data.netIncome >= 0 ? 'LUCRO LÍQUIDO FINAL' : 'PREJUÍZO APURADO'}
+                            </span>
+                            <div className="text-right">
+                                <span className={data.netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                                    {formatCurrency(data.netIncome)}
+                                </span>
+                                <span className="text-xs ml-4 text-slate-400">{getAV(data.netIncome)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        ) : (
-            <div className="flex flex-col items-center justify-center p-20 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-300">
-                <PieChart size={64} className="mb-4 opacity-20"/>
-                <h3 className="text-lg font-bold text-slate-600">Sem dados para exibir</h3>
-                <p className="max-w-xs text-sm mt-2 mb-6">Nenhuma transação, venda ou despesa encontrada no período selecionado.</p>
-                <Button onClick={fetchDRE} className="px-8">Recarregar Dados</Button>
-            </div>
-        )}
-    </div>
 
-    {/* CONTEÚDO EXCLUSIVO PARA IMPRESSÃO - FORÇA OVERLAY TOTAL */}
-    <div className="hidden print:block fixed inset-0 z-[9999] bg-white w-full h-full p-0 m-0 overflow-visible">
-        <DREReportPrint 
-            data={data}
-            dateStart={dateStart}
-            dateEnd={dateEnd}
-            businessInfo={state.businessInfo}
-            theme={state.theme}
-            config={config}
-        />
+                <ManagerInsights data={data} />
+            </>
+        )}
+
+        {/* PRINTABLE COMPONENT */}
+        <div className="hidden print:block fixed inset-0 z-[9999] bg-white w-full h-full">
+            <DREReportPrint 
+                data={data} 
+                dateStart={dateStart} 
+                dateEnd={dateEnd} 
+                businessInfo={restState.businessInfo} 
+                theme={restState.theme} 
+                config={config} 
+            />
+        </div>
     </div>
-    </>
   );
 };

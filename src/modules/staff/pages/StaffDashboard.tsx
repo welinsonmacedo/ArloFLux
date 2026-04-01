@@ -53,12 +53,7 @@ export const StaffDashboard: React.FC = () => {
         icon: Settings, 
         featureKeys: ['hr_config']
     },
-    { 
-        path: '/rh/integration', 
-        label: 'E-SOCIAL', 
-        icon: Network, 
-        featureKeys: ['hr_integration'] 
-    },
+    
   ];
 
   const visibleTabs = tabs.filter(tab => {
@@ -150,7 +145,7 @@ export const StaffDashboard: React.FC = () => {
                     <Route path="/attendance" element={<StaffAttendance />} />
                     <Route path="/payroll" element={<StaffPayrollWrapper />} />
                     <Route path="/settings" element={<StaffSettings />} />
-                    <Route path="/integration" element={<StaffIntegration />} />
+                   
                     <Route path="*" element={<Navigate to="" replace />} />
                 </Routes>
             </div>

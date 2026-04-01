@@ -784,11 +784,7 @@ const calculateVacation = async (staffId: string, startDate: Date, days: number,
           original_entry_id: entry.originalEntryId,
           correction_reason: entry.correctionReason,
           created_by: currentUser?.auth_user_id,
-          time_clock: settings.timeClock,
-          esocial_cnae: settings.esocialCnae,
-          esocial_fap: settings.esocialFap,
-          esocial_rat: settings.esocialRat,
-          esocial_fpas: settings.esocialFpas
+        
       }; 
       const { error } = await supabase.from('rh_time_entries').insert(payload); 
       if(error) throw error; 
@@ -838,7 +834,12 @@ const calculateVacation = async (staffId: string, startDate: Date, days: number,
           absence_logic: settings.absenceLogic,
           dsr_config: settings.dsrConfig,
           integrate_finance: settings.integrateFinance,
-          time_clock: settings.timeClock
+          time_clock: settings.timeClock || { validationType: 'NONE', maxDailyPunches: 4 },
+    esocial_cnae: settings.esocialCnae || null,
+    esocial_rat: Number(settings.esocialRat) || 0,
+    esocial_fap: Number(settings.esocialFap) || 0,
+    esocial_fpas: settings.esocialFpas || null,
+    updated_at: new Date().toISOString()
       };
 
       // Verifica se já existe uma configuração salva para este tenant
