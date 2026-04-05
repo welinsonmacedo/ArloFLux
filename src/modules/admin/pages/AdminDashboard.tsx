@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 // @ts-ignore
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useRestaurant } from '@/core/context/RestaurantContext';
@@ -6,9 +6,10 @@ import { useAuth } from '@/core/context/AuthProvider';
 import { 
     LayoutDashboard, Utensils, QrCode, Activity,
     LogOut, Grid, ChefHat, BookOpen, Package,
-    Menu, X, ChevronRight, User, Settings,
+    Menu, X, ChevronRight, UserCircle,
     DollarSign, Users, Network, ShieldCheck
 } from 'lucide-react';
+import { Role } from '@/types';
 
 // Importando Sub-páginas
 import { AdminOverview } from '@/modules/admin/pages/admin/AdminOverview';
@@ -21,21 +22,63 @@ import { StaffIntegration } from '@/modules/staff/pages/admin/StaffIntegration';
 import { AdminFinance } from '@/modules/finance/pages/admin/AdminFinance';
 import { AdminSettings } from '@/modules/admin/pages/admin/AdminSettings';
 
+// Estilos CSS injetados dinamicamente
+const injectStyles = () => {
+  if (typeof document !== 'undefined' && !document.getElementById('admin-menu-styles')) {
+    const style = document.createElement('style');
+    style.id = 'admin-menu-styles';
+    style.textContent = `
+      @keyframes slideInLeft {
+        from {
+          opacity: 0;
+          transform: translateX(-100%);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      
+      .animate-slide-in-left {
+        animation: slideInLeft 0.3s ease-out forwards;
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.2s ease-out forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+};
+
 export const AdminDashboard: React.FC = () => {
     const { state: restState } = useRestaurant();
     const { state: authState, logout } = useAuth();
     const { planLimits } = restState;
     const location = useLocation();
     const navigate = useNavigate();
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [isAnimating, setIsAnimating] = useState(false);
 
-    // Definição das Abas do Gestor Atualizada
-    const tabs = [
+    // Injetar estilos ao montar componente
+    useEffect(() => {
+        injectStyles();
+    }, []);
+
+    // Definição dos itens do menu
+    const menuItems = [
         { 
             path: '/admin', 
-            label: 'Visão Geral', 
+            label: 'VISÃO GERAL', 
             icon: LayoutDashboard, 
             exact: true, 
             featureKeys: ['admin_overview'],
@@ -43,49 +86,49 @@ export const AdminDashboard: React.FC = () => {
         },
         { 
             path: '/admin/monitoring', 
-            label: 'Monitoramento', 
+            label: 'MONITORAMENTO', 
             icon: Activity, 
             featureKeys: ['admin_monitoring'],
             description: 'Atividade em tempo real'
         }, 
         { 
             path: '/admin/products', 
-            label: 'Cardápio', 
+            label: 'CARDÁPIO', 
             icon: Utensils, 
             featureKeys: ['admin_products'],
             description: 'Gerenciar produtos'
         },
         { 
             path: '/admin/inventory', 
-            label: 'Estoque', 
+            label: 'ESTOQUE', 
             icon: Package, 
             featureKeys: ['admin_inventory'],
             description: 'Controle de insumos'
         },
         { 
             path: '/admin/finance', 
-            label: 'Financeiro', 
+            label: 'FINANCEIRO', 
             icon: DollarSign, 
             featureKeys: ['admin_finance'],
             description: 'Fluxo de caixa e DRE'
         },
         { 
             path: '/admin/payroll', 
-            label: 'RH & Folha', 
+            label: 'RH & FOLHA', 
             icon: Users, 
             featureKeys: ['admin_staff'],
             description: 'Gestão de pagamentos'
         },
         { 
             path: '/admin/esocial', 
-            label: 'e-Social', 
+            label: 'E-SOCIAL', 
             icon: Network, 
             featureKeys: ['admin_staff'],
             description: 'Arquivos XML'
         },
         { 
             path: '/admin/tables', 
-            label: 'Mesas & QR', 
+            label: 'MESAS & QR', 
             icon: QrCode, 
             featureKeys: ['admin_tables'], 
             required: 'allowTableMgmt',
@@ -93,38 +136,27 @@ export const AdminDashboard: React.FC = () => {
         },
         { 
             path: '/admin/settings', 
-            label: 'Empresa', 
-            icon: Settings, 
+            label: 'EMPRESA', 
+            icon: ShieldCheck,
             featureKeys: ['admin_settings'],
             description: 'Dados da unidade'
         },
     ];
 
-    useEffect(() => {
-        setIsMobileMenuOpen(false);
-    }, [location.pathname]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isUserMenuOpen && !(event.target as Element).closest('.user-menu')) {
-                setIsUserMenuOpen(false);
-            }
-        };
-        document.addEventListener('click', handleClickOutside);
-        return () => document.removeEventListener('click', handleClickOutside);
-    }, [isUserMenuOpen]);
-
-    const visibleTabs = tabs.filter(tab => {
-        if (tab.required === 'allowTableMgmt' && !planLimits.allowTableMgmt) return false;
+    const visibleMenuItems = menuItems.filter(item => {
+        // 1. Checa requisitos especiais
+        if (item.required === 'allowTableMgmt' && !planLimits.allowTableMgmt) return false;
         
+        // 2. Checagem de features (Tenant)
         if (restState.allowedFeatures && restState.allowedFeatures.length > 0) {
-            const hasFeature = tab.featureKeys.some(key => restState.allowedFeatures!.includes(key));
+            const hasFeature = item.featureKeys.some(key => restState.allowedFeatures!.includes(key));
             if (!hasFeature) return false;
         }
 
-        if (authState.currentUser?.role !== 'ADMIN' && authState.currentUser?.customRoleId) {
+        // 3. Permissões do Usuário
+        if (authState.currentUser?.role !== Role.ADMIN && authState.currentUser?.customRoleId) {
             const userFeatures = authState.currentUser.allowedFeatures || [];
-            const hasUserFeature = tab.featureKeys.some(key => userFeatures.includes(key));
+            const hasUserFeature = item.featureKeys.some(key => userFeatures.includes(key));
             if (!hasUserFeature) return false;
         }
 
@@ -132,133 +164,238 @@ export const AdminDashboard: React.FC = () => {
     });
 
     const handleExitToModules = () => navigate('/modules');
-    const handleLogout = () => logout();
 
-    const currentTab = visibleTabs.find(tab => 
-        tab.exact ? location.pathname === tab.path : location.pathname.startsWith(tab.path)
-    ) || visibleTabs[0];
+    // Função para fechar o menu
+    const closeMenu = useCallback(() => {
+        if (isAnimating) return;
+        setIsAnimating(true);
+        setMenuOpen(false);
+        setTimeout(() => {
+            setIsAnimating(false);
+        }, 300);
+    }, [isAnimating]);
+
+    // Função para abrir o menu
+    const openMenu = useCallback(() => {
+        if (isAnimating) return;
+        setIsAnimating(true);
+        setMenuOpen(true);
+        setTimeout(() => {
+            setIsAnimating(false);
+        }, 300);
+    }, [isAnimating]);
+
+    // Função para alternar o menu
+    const toggleMenu = useCallback(() => {
+        if (menuOpen) {
+            closeMenu();
+        } else {
+            openMenu();
+        }
+    }, [menuOpen, closeMenu, openMenu]);
+
+    // Fecha menu ao trocar de rota
+    useEffect(() => {
+        if (menuOpen) {
+            closeMenu();
+        }
+    }, [location.pathname]);
+
+    // Handler para o botão de voltar do navegador/Android
+    useEffect(() => {
+        if (menuOpen) {
+            window.history.pushState({ menuOpen: true }, '', window.location.href);
+        }
+
+        const handlePopState = (event: PopStateEvent) => {
+            if (menuOpen) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeMenu();
+                return;
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [menuOpen, closeMenu]);
+
+    // Handler para tecla ESC
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && menuOpen) {
+                closeMenu();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [menuOpen, closeMenu]);
+
+    // Prevenir scroll do body quando menu estiver aberto
+    useEffect(() => {
+        if (menuOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [menuOpen]);
+
+    // Encontrar o item ativo para o indicador mobile
+    const activeItem = visibleMenuItems.find(item => 
+        item.exact ? location.pathname === item.path : location.pathname.startsWith(item.path)
+    );
 
     return (
-        <div className={`flex flex-col h-screen ${isDarkMode ? 'dark' : ''} overflow-hidden font-sans`}>
+        <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
             
-            {/* TOP BAR */}
-            <header className="bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-xl shrink-0 z-30 relative">
-                <div className="w-full mx-auto">
-                    <div className="px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                                className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-all focus:outline-none"
-                            >
-                                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-                            </button>
-
-                            <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm">
-                                {restState.theme.logoUrl ? (
-                                    <img src={restState.theme.logoUrl} className="h-7 w-7 object-contain" alt="Logo" />
-                                ) : (
-                                    <ChefHat size={20} />
-                                )}
-                            </div>
-                            
-                            <div className="hidden sm:block">
-                                <h1 className="font-bold text-base leading-tight">
-                                    {restState.theme.restaurantName}
-                                </h1>
-                                <span className="text-[10px] font-bold bg-purple-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                    Unidade Gestora
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                            <div className="relative user-menu">
-                                <button
-                                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 transition-all"
+            {/* Overlay para fechar menu */}
+            {menuOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-40"
+                    style={{
+                        animation: 'fadeIn 0.2s ease-out forwards',
+                        cursor: 'pointer'
+                    }}
+                    onClick={closeMenu}
+                />
+            )}
+            
+            {/* Header */}
+            <header className="bg-transparent relative">
+                <div className="max-w-[1920px] mx-auto relative z-10">
+                    <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex justify-between items-center">
+                        {!menuOpen && (
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={toggleMenu}
+                                    className="flex items-center justify-center p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all relative z-50"
+                                    aria-label="Abrir menu"
                                 >
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-md">
-                                        <User size={16} />
-                                    </div>
-                                    <span className="hidden sm:inline text-sm font-medium">
-                                        {authState.currentUser?.name?.split(' ')[0] || 'Admin'}
-                                    </span>
-                                    <ChevronRight size={14} className={`transition-transform duration-200 ${isUserMenuOpen ? 'rotate-90' : ''}`} />
+                                    <Menu size={24} />
                                 </button>
-
-                                {isUserMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl py-2 z-50 border border-gray-100 text-slate-800">
-                                        <div className="px-4 py-3 border-b border-gray-100">
-                                            <p className="text-sm font-semibold">{authState.currentUser?.name}</p>
-                                            <p className="text-xs text-gray-500">{authState.currentUser?.email}</p>
-                                        </div>
-                                        <Link to="/manual" target="_blank" className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-gray-50"><BookOpen size={16} /> Manual</Link>
-                                        <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"><LogOut size={16} /> Sair</button>
-                                    </div>
-                                )}
+                              
                             </div>
+                        )}
 
-                            <button 
-                                onClick={handleExitToModules}
-                                className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase bg-white/10 hover:bg-white/20 border border-white/20"
-                            >
-                                <Grid size={16} /> Módulos
-                            </button>
-                        </div>
-                    </div>
+                        {/* Quando o menu está aberto - mostra APENAS o botão toggle no canto esquerdo */}
+                        {menuOpen && (
+                            <div className="w-full flex justify-start">
+                                <button 
+                                    onClick={toggleMenu}
+                                    className="flex items-center justify-center p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
+                                    aria-label="Fechar menu"
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+                        )}
 
-                    {/* Desktop Navigation */}
-                    <div className="hidden lg:block px-8">
-                        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-                            {visibleTabs.map(tab => {
-                                const isActive = tab.exact ? location.pathname === tab.path : location.pathname.startsWith(tab.path);
-                                return (
-                                    <Link 
-                                        key={tab.path}
-                                        to={tab.path}
-                                        className={`group relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all whitespace-nowrap ${isActive ? 'text-white bg-white/10 rounded-t-lg' : 'text-slate-400 hover:text-white hover:bg-white/5 rounded-t-lg'}`}
-                                    >
-                                        <tab.icon size={18} className={`${isActive ? 'text-purple-400' : ''}`} />
-                                        <span>{tab.label}</span>
-                                        {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500 rounded-full" />}
-                                    </Link>
-                                );
-                            })}
-                        </div>
+                    
                     </div>
                 </div>
             </header>
 
-            {/* Mobile Sidebar Navigation */}
-            {isMobileMenuOpen && (
-                <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
-                    <div className="w-72 h-full bg-slate-900 shadow-2xl p-6 space-y-4 animate-slideInLeft" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-8">
-                            <h2 className="font-black text-white text-xl tracking-tighter">ArloFlux <span className="text-purple-500">Gestor</span></h2>
-                            <X className="text-slate-400" onClick={() => setIsMobileMenuOpen(false)}/>
+            {/* Menu Lateral */}
+            {menuOpen && (
+                <div 
+                    className="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl z-50"
+                    style={{
+                        animation: 'slideInLeft 0.3s ease-out forwards'
+                    }}
+                >
+                    <div className="flex flex-col h-full">
+                        {/* Header do menu */}
+                        <div className="flex items-center justify-between p-4 border-b border-slate-700/50">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-white/15 p-2 rounded-full">
+                                    <UserCircle size={20} color="white" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-white">{authState.currentUser?.name}</p>
+                                    <p className="text-xs text-slate-300">Unidade Gestora</p>
+                                </div>
+                            </div>
                         </div>
-                        {visibleTabs.map(tab => {
-                            const isActive = tab.exact ? location.pathname === tab.path : location.pathname.startsWith(tab.path);
-                            return (
-                                <Link 
-                                    key={tab.path} to={tab.path}
-                                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${isActive ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}
-                                >
-                                    <tab.icon size={20} />
-                                    <span className="font-bold">{tab.label}</span>
-                                </Link>
-                            );
-                        })}
-                        <div className="pt-8 border-t border-slate-800 mt-auto">
-                            <button onClick={handleExitToModules} className="w-full flex items-center gap-3 p-3 text-slate-400 font-bold"><Grid size={20}/> Todos os Módulos</button>
-                            <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 text-red-500 font-bold"><LogOut size={20}/> Sair do Sistema</button>
+                        
+                        {/* Links do menu */}
+                        <div className="flex-1 overflow-y-auto py-4">
+                            {visibleMenuItems.map((item) => {
+                                const isActive = item.exact 
+                                    ? location.pathname === item.path 
+                                    : location.pathname.startsWith(item.path);
+                                
+                                return (
+                                    <Link
+                                        key={item.path}
+                                        to={item.path}
+                                        onClick={closeMenu}
+                                        className={`flex items-center justify-between px-4 py-3 transition-all ${
+                                            isActive 
+                                                ? 'bg-purple-600/30 text-white border-l-4 border-purple-500' 
+                                                : 'text-slate-300 hover:bg-white/10'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <item.icon size={18} />
+                                            <div>
+                                                <div className="font-medium text-sm">{item.label}</div>
+                                                <div className="text-xs text-slate-400">{item.description}</div>
+                                            </div>
+                                        </div>
+                                        {isActive && <ChevronRight size={16} />}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* Footer do menu */}
+                        <div className="border-t border-slate-700/50 p-4">
+                            <button 
+                                onClick={() => {
+                                    closeMenu();
+                                    setTimeout(() => handleExitToModules(), 150);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-white/10 transition-all"
+                            >
+                                <Grid size={18} />
+                                <span className="font-medium text-sm">Módulos</span>
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    closeMenu();
+                                    setTimeout(() => logout(), 150);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all mt-2"
+                            >
+                                <LogOut size={18} />
+                                <span className="font-medium text-sm">Sair</span>
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* MAIN CONTENT AREA */}
-            <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+            {/* Mobile Tab Indicator (apenas quando menu está fechado) */}
+            {!menuOpen && activeItem && (
+                <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-2 shadow-sm">
+                    <activeItem.icon size={18} className="text-purple-600" />
+                    <span className="text-sm font-semibold text-gray-800">{activeItem.label}</span>
+                    <span className="text-xs text-gray-400 ml-auto">{activeItem.description}</span>
+                </div>
+            )}
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100">
                 <div className="w-full mx-auto p-4 sm:p-6 lg:p-8">
                     <Routes>
                         <Route path="/" element={<AdminOverview />} />
@@ -270,7 +407,7 @@ export const AdminDashboard: React.FC = () => {
                         <Route path="esocial" element={<StaffIntegration />} />
                         <Route path="tables" element={<AdminTables />} />
                         <Route path="settings" element={<AdminSettings />} />
-                        <Route path="*" element={<Navigate to="" replace />} />
+                        <Route path="*" element={<Navigate to="/admin" replace />} />
                     </Routes>
                 </div>
             </main>

@@ -571,106 +571,269 @@ const calculateVacation = async (staffId: string, startDate: Date, days: number,
       await fetchData();
   };
 
-  const addUser = async (user: Partial<User>) => {
-      if(!tenantId) return;
-      
-      const { error } = await supabase.rpc('add_staff', {
-          p_tenant_id: tenantId,
-          p_max_staff: planLimits.maxStaff,
-          p_staff: {
-              name: user.name,
-              role: user.role,
-              custom_role_id: user.customRoleId || null,
-              pin: '0000',
-              email: user.email,
-              allowed_routes: user.allowedRoutes || [],
-              department: user.department,
-              hr_job_role_id: user.hrJobRoleId || null,
-              hire_date: user.hireDate?.toISOString().split('T')[0],
-              contract_type: user.contractType,
-              work_model: user.workModel,
-              base_salary: user.baseSalary,
-              benefits_total: user.benefitsTotal,
-              status: user.status,
-              shift_id: user.shiftId || null,
-              phone: user.phone,
-              document_cpf: user.documentCpf,
-              dependents_count: user.dependentsCount || 0,
-              created_by: currentUser?.auth_user_id,
-              registration_number: user.registrationNumber,
-              birth_date: user.birthDate ? new Date(user.birthDate).toISOString().split('T')[0] : null,
-              rg_number: user.rgNumber,
-              rg_issuer: user.rgIssuer,
-              rg_state: user.rgState,
-              address_zip: user.addressZip,
-              address_street: user.addressStreet,
-              address_number: user.addressNumber,
-              address_complement: user.addressComplement,
-              address_neighborhood: user.addressNeighborhood,
-              address_city: user.addressCity,
-              address_state: user.addressState,
-              pis_pasep: user.pisPasep,
-              ctps_number: user.ctpsNumber,
-              ctps_series: user.ctpsSeries,
-              ctps_state: user.ctpsState,
-              marital_status: user.maritalStatus,
-              emergency_contact_name: user.emergencyContactName,
-              emergency_contact_phone: user.emergencyContactPhone,
-              fathers_name: user.fathersName,
-              mothers_name: user.mothersName,
-              education_level: user.educationLevel,
-              voter_registration: user.voterRegistration,
-              bank_name: user.bankName,
-              bank_agency: user.bankAgency,
-              bank_account: user.bankAccount,
-              bank_account_type: user.bankAccountType,
-              pix_key: user.pixKey,
-              health_plan_info: user.healthPlanInfo,
-              pension_info: user.pensionInfo,
-              transport_voucher_info: user.transportVoucherInfo,
-              meal_voucher_info: user.mealVoucherInfo,
-              sst_info: user.sstInfo
-          }
-      });
+const addUser = async (user: Partial<User>) => {
+    if(!tenantId) {
+        throw new Error("Tenant ID não encontrado");
+    }
+    
+    console.log("📝 addUser - Inserindo diretamente na tabela staff");
+    
+    // Verificar limite de funcionários
+    if (planLimits.maxStaff && state.users.length >= planLimits.maxStaff) {
+        throw new Error(`Limite máximo de ${planLimits.maxStaff} funcionários atingido`);
+    }
+    
+    // Buscar o maior PIN atual para gerar o próximo sequencial
+    const { data: maxPinData, error: maxPinError } = await supabase
+        .from('staff')
+        .select('pin')
+        .eq('tenant_id', tenantId)
+        .order('pin', { ascending: false })
+        .limit(1);
+    
+    if (maxPinError) {
+        console.error("❌ Erro ao buscar último PIN:", maxPinError);
+    }
+    
+    // Gerar próximo PIN (começando de 1000)
+    let nextPin = 1000;
+    if (maxPinData && maxPinData.length > 0 && maxPinData[0].pin) {
+        const lastPin = parseInt(maxPinData[0].pin, 10);
+        if (!isNaN(lastPin)) {
+            nextPin = lastPin + 1;
+        }
+    }
+    
+    const pin = nextPin.toString();
+    console.log(`📌 PIN gerado: ${pin}`);
+    
+    // Validar ENUMs
+    const validContractTypes = ['CLT', 'PJ', 'FREELANCE', 'TEMPORARY', 'INTERN'];
+    const contractType = user.contractType && validContractTypes.includes(user.contractType) 
+        ? user.contractType 
+        : 'CLT';
+        
+    const validWorkModels = ['44H_WEEKLY', '12X36', 'PART_TIME', 'INTERMITTENT', 'ROTATING'];
+    const workModel = user.workModel && validWorkModels.includes(user.workModel) 
+        ? user.workModel 
+        : '44H_WEEKLY';
+        
+    const validStatus = ['ACTIVE', 'ON_LEAVE', 'TERMINATED', 'VACATION'];
+    const status = user.status && validStatus.includes(user.status) 
+        ? user.status 
+        : 'ACTIVE';
+        
+    const validMaritalStatus = ['SOLTEIRO', 'CASADO', 'DIVORCIADO', 'VIUVO', 'UNIAO_ESTAVEL'];
+    const maritalStatus = user.maritalStatus && validMaritalStatus.includes(user.maritalStatus) 
+        ? user.maritalStatus 
+        : null;
+        
+    const validEducationLevel = ['FUNDAMENTAL_INCOMPLETO', 'FUNDAMENTAL_COMPLETO', 'MEDIO_INCOMPLETO', 'MEDIO_COMPLETO', 'SUPERIOR_INCOMPLETO', 'SUPERIOR_COMPLETO', 'POS_GRADUACAO'];
+    const educationLevel = user.educationLevel && validEducationLevel.includes(user.educationLevel) 
+        ? user.educationLevel 
+        : null;
+        
+    const validBankAccountTypes = ['CORRENTE', 'POUPANCA', 'SALARIO', 'PAGAMENTO'];
+    const bankAccountType = user.bankAccountType && validBankAccountTypes.includes(user.bankAccountType) 
+        ? user.bankAccountType 
+        : 'CORRENTE';
+    
+    // Preparar dados para inserção - GARANTIR que o PIN está presente
+    const insertData = {
+        tenant_id: tenantId,
+        name: user.name,
+        pin: pin, // PIN OBRIGATÓRIO - sempre presente
+        role: user.role || 'WAITER',
+        custom_role_id: user.customRoleId || null,
+        email: user.email || null,
+        phone: user.phone || null,
+        document_cpf: user.documentCpf || null,
+        department: user.department || null,
+        hr_job_role_id: user.hrJobRoleId || null,
+        hire_date: user.hireDate ? new Date(user.hireDate).toISOString().split('T')[0] : null,
+        contract_type: contractType,
+        work_model: workModel,
+        base_salary: user.baseSalary || 0,
+        benefits_total: user.benefitsTotal || 0,
+        status: status,
+        shift_id: user.shiftId || null,
+        allowed_routes: user.allowedRoutes || [],
+        dependents_count: user.dependentsCount || 0,
+        registration_number: user.registrationNumber || null,
+        birth_date: user.birthDate ? new Date(user.birthDate).toISOString().split('T')[0] : null,
+        rg_number: user.rgNumber || null,
+        rg_issuer: user.rgIssuer || null,
+        rg_state: user.rgState || null,
+        address_zip: user.addressZip || null,
+        address_street: user.addressStreet || null,
+        address_number: user.addressNumber || null,
+        address_complement: user.addressComplement || null,
+        address_neighborhood: user.addressNeighborhood || null,
+        address_city: user.addressCity || null,
+        address_state: user.addressState || null,
+        pis_pasep: user.pisPasep || null,
+        ctps_number: user.ctpsNumber || null,
+        ctps_series: user.ctpsSeries || null,
+        ctps_state: user.ctpsState || null,
+        marital_status: maritalStatus,
+        emergency_contact_name: user.emergencyContactName || null,
+        emergency_contact_phone: user.emergencyContactPhone || null,
+        fathers_name: user.fathersName || null,
+        mothers_name: user.mothersName || null,
+        education_level: educationLevel,
+        voter_registration: user.voterRegistration || null,
+        bank_name: user.bankName || null,
+        bank_agency: user.bankAgency || null,
+        bank_account: user.bankAccount || null,
+        bank_account_type: bankAccountType,
+        pix_key: user.pixKey || null,
+        health_plan_info: user.healthPlanInfo || null,
+        pension_info: user.pensionInfo || null,
+        transport_voucher_info: user.transportVoucherInfo || null,
+        meal_voucher_info: user.mealVoucherInfo || null,
+        sst_info: user.sstInfo || null,
+        created_by: currentUser?.auth_user_id || null
+    };
+    
+    // Remover undefined mas manter o PIN
+    Object.keys(insertData).forEach(key => {
+        if (insertData[key] === undefined) {
+            insertData[key] = null;
+        }
+    });
+    
+    // Verificar se o PIN está presente
+    if (!insertData.pin) {
+        console.error("❌ PIN não foi definido!");
+        throw new Error("Erro interno: PIN não gerado");
+    }
+    
+    console.log("📤 Inserindo dados com PIN:", insertData.pin);
+    
+    const { data, error } = await supabase
+        .from('staff')
+        .insert(insertData)
+        .select();
+    
+    if (error) {
+        console.error("❌ Erro detalhado:", error);
+        throw new Error(`Erro ao criar funcionário: ${error.message}`);
+    }
+    
+    console.log("✅ Funcionário criado com sucesso com PIN:", pin);
+    
+    // Log de auditoria
+    if (currentUser && tenantId) {
+        await logAudit(tenantId, currentUser.id, currentUser.name, 'HR', 'Criação de Colaborador', { 
+            userName: user.name,
+            pin: pin
+        });
+    }
+    
+    // Recarregar dados
+    await fetchData();
+    
+    return data;
+};
+ const updateUser = async (user: User) => {
+    if(!tenantId) {
+        throw new Error("Tenant ID não encontrado");
+    }
+    
+    // Converter tipos ENUM para o formato correto
+    const validContractTypes = ['CLT', 'PJ', 'FREELANCE', 'TEMPORARY', 'INTERN'];
+    const contractType = user.contractType && validContractTypes.includes(user.contractType) 
+        ? user.contractType 
+        : 'CLT';
+        
+    const validWorkModels = ['44H_WEEKLY', '12X36', 'PART_TIME', 'INTERMITTENT', 'ROTATING'];
+    const workModel = user.workModel && validWorkModels.includes(user.workModel) 
+        ? user.workModel 
+        : '44H_WEEKLY';
+        
+    const validStatus = ['ACTIVE', 'ON_LEAVE', 'TERMINATED', 'VACATION'];
+    const status = user.status && validStatus.includes(user.status) 
+        ? user.status 
+        : 'ACTIVE';
+        
+    const validMaritalStatus = ['SOLTEIRO', 'CASADO', 'DIVORCIADO', 'VIUVO', 'UNIAO_ESTAVEL'];
+    const maritalStatus = user.maritalStatus && validMaritalStatus.includes(user.maritalStatus) 
+        ? user.maritalStatus 
+        : null;
+        
+    const validEducationLevel = ['FUNDAMENTAL_INCOMPLETO', 'FUNDAMENTAL_COMPLETO', 'MEDIO_INCOMPLETO', 'MEDIO_COMPLETO', 'SUPERIOR_INCOMPLETO', 'SUPERIOR_COMPLETO', 'POS_GRADUACAO'];
+    const educationLevel = user.educationLevel && validEducationLevel.includes(user.educationLevel) 
+        ? user.educationLevel 
+        : null;
+        
+    const validBankAccountTypes = ['CORRENTE', 'POUPANCA', 'SALARIO', 'PAGAMENTO'];
+    const bankAccountType = user.bankAccountType && validBankAccountTypes.includes(user.bankAccountType) 
+        ? user.bankAccountType 
+        : 'CORRENTE';
+    
+    const { error } = await supabase.from('staff').update({ 
+        name: user.name, 
+        role: user.role, 
+        custom_role_id: user.customRoleId || null,
+        email: user.email, 
+        allowed_routes: user.allowedRoutes, 
+        department: user.department,
+        hr_job_role_id: user.hrJobRoleId || null,
+        hire_date: user.hireDate ? new Date(user.hireDate).toISOString().split('T')[0] : null,
+        contract_type: contractType,
+        work_model: workModel,
+        base_salary: user.baseSalary, 
+        benefits_total: user.benefitsTotal,
+        status: status, 
+        shift_id: user.shiftId || null, 
+        phone: user.phone, 
+        document_cpf: user.documentCpf,
+        dependents_count: user.dependentsCount || 0,
+        registration_number: user.registrationNumber,
+        birth_date: user.birthDate ? new Date(user.birthDate).toISOString().split('T')[0] : null,
+        rg_number: user.rgNumber, 
+        rg_issuer: user.rgIssuer, 
+        rg_state: user.rgState,
+        address_zip: user.addressZip, 
+        address_street: user.addressStreet, 
+        address_number: user.addressNumber,
+        address_complement: user.addressComplement, 
+        address_neighborhood: user.addressNeighborhood,
+        address_city: user.addressCity, 
+        address_state: user.addressState,
+        pis_pasep: user.pisPasep, 
+        ctps_number: user.ctpsNumber, 
+        ctps_series: user.ctpsSeries, 
+        ctps_state: user.ctpsState,
+        marital_status: maritalStatus, 
+        emergency_contact_name: user.emergencyContactName, 
+        emergency_contact_phone: user.emergencyContactPhone,
+        fathers_name: user.fathersName, 
+        mothers_name: user.mothersName, 
+        education_level: educationLevel, 
+        voter_registration: user.voterRegistration,
+        bank_name: user.bankName, 
+        bank_agency: user.bankAgency, 
+        bank_account: user.bankAccount, 
+        bank_account_type: bankAccountType, 
+        pix_key: user.pixKey,
+        health_plan_info: user.healthPlanInfo, 
+        pension_info: user.pensionInfo, 
+        transport_voucher_info: user.transportVoucherInfo, 
+        meal_voucher_info: user.mealVoucherInfo,
+        sst_info: user.sstInfo
+    }).eq('id', user.id);
 
-      if (error) { throw new Error(error.message); }
-      if (currentUser && tenantId) {
-          await logAudit(tenantId, currentUser.id, currentUser.name, 'HR', 'Criação de Colaborador', { userName: user.name, role: user.role });
-      }
-      await fetchData();
-  };
-
-  const updateUser = async (user: User) => {
-      const { error } = await supabase.from('staff').update({ 
-          name: user.name, role: user.role, custom_role_id: user.customRoleId || null,
-          email: user.email, allowed_routes: user.allowedRoutes, department: user.department,
-          hr_job_role_id: user.hrJobRoleId || null,
-          hire_date: user.hireDate ? new Date(user.hireDate).toISOString().split('T')[0] : null,
-          contract_type: user.contractType, work_model: user.workModel,
-          base_salary: user.baseSalary, benefits_total: user.benefitsTotal,
-          status: user.status, shift_id: user.shiftId || null, phone: user.phone, document_cpf: user.documentCpf,
-          dependents_count: user.dependentsCount || 0,
-          // Extended Fields
-          registration_number: user.registrationNumber,
-          birth_date: user.birthDate ? new Date(user.birthDate).toISOString().split('T')[0] : null,
-          rg_number: user.rgNumber, rg_issuer: user.rgIssuer, rg_state: user.rgState,
-          address_zip: user.addressZip, address_street: user.addressStreet, address_number: user.addressNumber,
-          address_complement: user.addressComplement, address_neighborhood: user.addressNeighborhood,
-          address_city: user.addressCity, address_state: user.addressState,
-          pis_pasep: user.pisPasep, ctps_number: user.ctpsNumber, ctps_series: user.ctpsSeries, ctps_state: user.ctpsState,
-          marital_status: user.maritalStatus, emergency_contact_name: user.emergencyContactName, emergency_contact_phone: user.emergencyContactPhone,
-          fathers_name: user.fathersName, mothers_name: user.mothersName, education_level: user.educationLevel, voter_registration: user.voterRegistration,
-          bank_name: user.bankName, bank_agency: user.bankAgency, bank_account: user.bankAccount, bank_account_type: user.bankAccountType, pix_key: user.pixKey,
-          health_plan_info: user.healthPlanInfo, pension_info: user.pensionInfo, transport_voucher_info: user.transportVoucherInfo, meal_voucher_info: user.mealVoucherInfo,
-          sst_info: user.sstInfo
-      }).eq('id', user.id);
-
-      if (error) { throw new Error(error.message); }
-      if (currentUser && tenantId) {
-          await logAudit(tenantId, currentUser.id, currentUser.name, 'HR', 'Atualização de Colaborador', { userName: user.name });
-      }
-      await fetchData();
-  };
+    if (error) { 
+        console.error("❌ Erro no updateUser:", error);
+        throw new Error(error.message); 
+    }
+    
+    if (currentUser && tenantId) {
+        await logAudit(tenantId, currentUser.id, currentUser.name, 'HR', 'Atualização de Colaborador', { userName: user.name });
+    }
+    await fetchData();
+};
 
   const deleteUser = async (userId: string) => { 
       await supabase.from('staff').delete().eq('id', userId); 

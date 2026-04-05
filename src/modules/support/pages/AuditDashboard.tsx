@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+// @ts-ignore
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useRestaurant } from '@/core/context/RestaurantContext';
 import { useAuth } from '@/core/context/AuthProvider';
 import { supabase } from '@/core/api/supabaseClient';
@@ -6,13 +8,13 @@ import {
     Shield, Search, Printer, Calendar, 
     Activity, Grid, LogOut, FileText,
     Package, DollarSign, Users, Settings, ChefHat, Store,
-    Eye
+    Eye, Menu, X, ChevronRight, UserCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
-import { Modal } from '@/modules/common/components/Modal';
 import DOMPurify from 'dompurify';
 import { GlobalLoading } from '@/modules/common/components/GlobalLoading';
+import { Modal } from '@/modules/common/components/Modal';
+import { Role } from '@/types';
 
 interface AuditLogEntry {
     id: string;
@@ -23,10 +25,51 @@ interface AuditLogEntry {
     details: any;
 }
 
+// Estilos CSS injetados dinamicamente
+const injectStyles = () => {
+  if (typeof document !== 'undefined' && !document.getElementById('audit-menu-styles')) {
+    const style = document.createElement('style');
+    style.id = 'audit-menu-styles';
+    style.textContent = `
+      @keyframes slideInLeft {
+        from {
+          opacity: 0;
+          transform: translateX(-100%);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      
+      .animate-slide-in-left {
+        animation: slideInLeft 0.3s ease-out forwards;
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.2s ease-out forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+};
+
 export const AuditDashboard: React.FC = () => {
     const { state: restState } = useRestaurant();
-    const { logout } = useAuth();
+    const { state: authState, logout } = useAuth();
+    const location = useLocation();
     const navigate = useNavigate();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [isAnimating, setIsAnimating] = useState(false);
     
     const [logs, setLogs] = useState<AuditLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -34,6 +77,34 @@ export const AuditDashboard: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [dateFilter, setDateFilter] = useState('');
     const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
+
+    // Injetar estilos ao montar componente
+    useEffect(() => {
+        injectStyles();
+    }, []);
+
+    // Definição dos itens do menu
+    const menuItems = [
+        { 
+            path: '/audit', 
+            label: 'AUDITORIA', 
+            icon: Shield, 
+            exact: true,
+            featureKeys: ['audit_logs'],
+            description: 'Logs do sistema'
+        },
+    ];
+
+    const visibleMenuItems = menuItems.filter(item => {
+        // Permissões do Usuário
+        if (authState.currentUser?.role !== Role.ADMIN && authState.currentUser?.customRoleId) {
+            const userFeatures = authState.currentUser.allowedFeatures || [];
+            const hasUserFeature = item.featureKeys.some(key => userFeatures.includes(key));
+            if (!hasUserFeature) return false;
+        }
+
+        return true;
+    });
 
     // ✨ Filtro inteligente: Só mostra a aba se o módulo estiver no plano (ou se for a aba "Todos")
     const activeModuleTabs = useMemo(() => {
@@ -91,53 +162,235 @@ export const AuditDashboard: React.FC = () => {
         window.print();
     };
 
-    const handleExit = () => {
-        navigate('/modules');
-    };
+    const handleExitToModules = () => navigate('/modules');
+
+    // Função para fechar o menu
+    const closeMenu = useCallback(() => {
+        if (isAnimating) return;
+        setIsAnimating(true);
+        setMenuOpen(false);
+        setTimeout(() => {
+            setIsAnimating(false);
+        }, 300);
+    }, [isAnimating]);
+
+    // Função para abrir o menu
+    const openMenu = useCallback(() => {
+        if (isAnimating) return;
+        setIsAnimating(true);
+        setMenuOpen(true);
+        setTimeout(() => {
+            setIsAnimating(false);
+        }, 300);
+    }, [isAnimating]);
+
+    // Função para alternar o menu
+    const toggleMenu = useCallback(() => {
+        if (menuOpen) {
+            closeMenu();
+        } else {
+            openMenu();
+        }
+    }, [menuOpen, closeMenu, openMenu]);
+
+    // Fecha menu ao trocar de rota
+    useEffect(() => {
+        if (menuOpen) {
+            closeMenu();
+        }
+    }, [location.pathname]);
+
+    // Handler para o botão de voltar do navegador/Android
+    useEffect(() => {
+        if (menuOpen) {
+            window.history.pushState({ menuOpen: true }, '', window.location.href);
+        }
+
+        const handlePopState = (event: PopStateEvent) => {
+            if (menuOpen) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeMenu();
+                return;
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [menuOpen, closeMenu]);
+
+    // Handler para tecla ESC
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && menuOpen) {
+                closeMenu();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [menuOpen, closeMenu]);
+
+    // Prevenir scroll do body quando menu estiver aberto
+    useEffect(() => {
+        if (menuOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [menuOpen]);
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+            
+            {/* Overlay para fechar menu */}
+            {menuOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-40"
+                    style={{
+                        animation: 'fadeIn 0.2s ease-out forwards',
+                        cursor: 'pointer'
+                    }}
+                    onClick={closeMenu}
+                />
+            )}
+            
             {/* Header */}
-            <header className="bg-slate-900 text-white shadow-xl shrink-0 z-30 print:hidden">
-                <div className="max-w-[1920px] mx-auto px-6 py-4 flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                        <div className="bg-white/10 p-2 rounded-xl backdrop-blur-md border border-white/10">
-                            <Shield size={24} className="text-slate-300" />
-                        </div>
-                        <div>
-                            <h1 className="font-bold text-lg leading-none tracking-tight">Auditoria do Sistema</h1>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">Logs de Atividades</p>
-                        </div>
-                    </div>
+            <header className="bg-transparent relative z-30">
+                <div className="max-w-[1920px] mx-auto relative z-10">
+                    <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex justify-between items-center">
+                        {!menuOpen && (
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={toggleMenu}
+                                    className="flex items-center justify-center p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all relative z-50"
+                                    aria-label="Abrir menu"
+                                >
+                                    <Menu size={24} />
+                                </button>
+                                
+                             
+                            </div>
+                        )}
 
-                    <div className="flex items-center gap-3">
-                        <button 
-                            onClick={handleExit}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700"
-                        >
-                            <Grid size={16} /> Módulos
-                        </button>
-                        <button 
-                            onClick={logout}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-300 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20 hover:border-red-500"
-                        >
-                            <LogOut size={16} /> Sair
-                        </button>
-                    </div>
-                </div>
+                        {/* Quando o menu está aberto - mostra APENAS o botão toggle no canto esquerdo */}
+                        {menuOpen && (
+                            <div className="w-full flex justify-start">
+                                <button 
+                                    onClick={toggleMenu}
+                                    className="flex items-center justify-center p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
+                                    aria-label="Fechar menu"
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+                        )}
 
-                {/* Linha Inferior (Abas) */}
-                <div className="px-6 flex gap-1 overflow-x-auto scrollbar-hide pt-2 max-w-[1920px] mx-auto">
-                    <div className="flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap border-slate-400 text-white bg-white/5 rounded-t-lg">
-                        <FileText size={18} className="text-slate-300" />
-                        LOGS
+                     
                     </div>
                 </div>
             </header>
 
+            {/* Menu Lateral */}
+            {menuOpen && (
+                <div 
+                    className="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl z-50"
+                    style={{
+                        animation: 'slideInLeft 0.3s ease-out forwards'
+                    }}
+                >
+                    <div className="flex flex-col h-full">
+                        {/* Header do menu */}
+                        <div className="flex items-center justify-between p-4 border-b border-slate-700/50">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-white/15 p-2 rounded-full">
+                                    <UserCircle size={20} color="white" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-white">{authState.currentUser?.name}</p>
+                                    <p className="text-xs text-slate-300">Auditoria</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Links do menu */}
+                        <div className="flex-1 overflow-y-auto py-4">
+                            {visibleMenuItems.map((item) => {
+                                const isActive = item.exact 
+                                    ? location.pathname === item.path 
+                                    : location.pathname.startsWith(item.path);
+                                
+                                return (
+                                    <Link
+                                        key={item.path}
+                                        to={item.path}
+                                        onClick={closeMenu}
+                                        className={`flex items-center justify-between px-4 py-3 transition-all ${
+                                            isActive 
+                                                ? 'bg-emerald-600/30 text-white border-l-4 border-emerald-500' 
+                                                : 'text-slate-300 hover:bg-white/10'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <item.icon size={18} />
+                                            <div>
+                                                <div className="font-medium text-sm">{item.label}</div>
+                                                <div className="text-xs text-slate-400">{item.description}</div>
+                                            </div>
+                                        </div>
+                                        {isActive && <ChevronRight size={16} />}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* Footer do menu */}
+                        <div className="border-t border-slate-700/50 p-4">
+                            <button 
+                                onClick={() => {
+                                    closeMenu();
+                                    setTimeout(() => handleExitToModules(), 150);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-white/10 transition-all"
+                            >
+                                <Grid size={18} />
+                                <span className="font-medium text-sm">Módulos</span>
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    closeMenu();
+                                    setTimeout(() => logout(), 150);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all mt-2"
+                            >
+                                <LogOut size={18} />
+                                <span className="font-medium text-sm">Sair</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mobile Tab Indicator (apenas quando menu está fechado) */}
+            {!menuOpen && (
+                <div className="lg:hidden bg-slate-900 px-4 py-2 flex items-center gap-2 border-b border-slate-800">
+                    <FileText size={16} className="text-slate-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">LOGS DE AUDITORIA</span>
+                </div>
+            )}
+
             {/* Main Content */}
-            <main className="flex-1 overflow-hidden flex flex-col p-4 md:p-8">
-                <div className="max-w-7xl mx-auto w-full flex flex-col h-full gap-6">
+            <main className="flex-1 overflow-hidden flex flex-col p-1 md:p-2">
+                <div className="flex-1 flex flex-col gap-4  p-4">
                     
                     {/* Controls */}
                     <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200 print:hidden">

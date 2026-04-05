@@ -246,8 +246,8 @@ export const ModuleSelector: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto relative z-10">     
-        <div className="flex flex-col items-center justify-center py-6 md:py-8 px-4 md:px-6 min-h-full">
+      <main className="flex-1 overflow-y-auto relative z-3">     
+        <div className="flex  items-center justify-center py-2 md:py-2 px-4 md:px-2 -full">
           
           {/* ✨ Alerta de Bloqueio para Empresas Inativas */}
           {isInactive && (
@@ -260,7 +260,7 @@ export const ModuleSelector: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-6 max-w-7xl w-full mx-auto pb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 md:gap-6 max-w-7xl w-full mx-auto pb-8">
             <ModuleCard 
               type="TIME_CLOCK"
               title="Bater Ponto"
@@ -428,11 +428,7 @@ export const ModuleSelector: React.FC = () => {
             />
           </div>
 
-          <div className="text-center py-6 mt-4">
-            <p className="text-white/50 text-sm">
-              © {new Date().getFullYear()} {tenantName} - Todos os direitos reservados
-            </p>
-          </div>
+        
         </div>
       </main>
     </div>

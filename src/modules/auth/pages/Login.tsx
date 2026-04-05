@@ -180,10 +180,7 @@ export const Login: React.FC = () => {
                   </div>
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
-                    {...register('confirmPassword')}
-                    className={`w-full pl-10 pr-10 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                      errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                    }`}
+                    
                     placeholder="••••••••"
                     disabled={loading}
                   />
@@ -199,9 +196,7 @@ export const Login: React.FC = () => {
                     )}
                   </button>
                 </div>
-                {errors.confirmPassword && (
-                  <p className="mt-1 text-xs text-red-500">{errors.confirmPassword.message}</p>
-                )}
+              
               </div>
             )}
             
@@ -221,19 +216,7 @@ export const Login: React.FC = () => {
               )}
             </Button>
             
-            {/* Toggle Mode */}
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setIsRegistering(!isRegistering)}
-                className="text-sm text-purple-600 hover:text-purple-700 font-medium"
-                disabled={loading}
-              >
-                {isRegistering 
-                  ? 'Já tem uma conta? Faça login' 
-                  : 'Não tem uma conta? Cadastre-se'}
-              </button>
-            </div>
+            
           </form>
         </div>
       </div>

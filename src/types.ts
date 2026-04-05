@@ -538,6 +538,7 @@ export interface User {
   mealVoucherInfo?: string;
   sstInfo?: string;
   signedContractUrl?: string;
+  requires_time_tracking?: boolean;
 }
 
 export type ContractTemplateType = 'CONTRACT' | 'NOTICE' | 'WARNING' | 'OTHER';
