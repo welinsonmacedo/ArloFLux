@@ -4,12 +4,19 @@
   "start_url": "/client/login",
   "scope": "/client/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#18181b",
   "theme_color": "#10b981",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/1996/1996068.png",
       "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1996/1996068.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]
